@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#1d1836"><title>Rocket Mining Tycoon · Horizontes infinitos</title>  
+  <link rel="stylesheet" href="./estilos.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><div class="brand-icon">↟</div><div><span class="eyebrow">PROGRAMA AURORA / HORIZONTES INFINITOS</span><h1>Rocket Mining <em>Tycoon</em> <small>0.8</small></h1></div></div>
+    <div class="actions"><span id="save-status">Guardado local</span><button id="menu-open">Menú</button><button id="tutorial-open">Aprender a construir</button><button id="save">Guardar</button><button id="pause">Pausar</button></div>
+  </header>
+  <main>
+    <section class="viewport">
+      <canvas id="world" tabindex="0" aria-label="Mapa industrial. WASD caminar; 1 a 0 construir; R girar; P red eléctrica; T investigación; O programa espacial; E minar."></canvas>
+      <div class="map-top"><span class="pill planet"><i></i><span id="planet-name">AURORA</span><b id="planet-number">01</b></span><span id="coords" class="pill"></span></div>
+      <div id="hover" class="tooltip"></div>
+      <div id="ore-hint" role="tooltip" hidden></div>
+      <div id="build-hint" class="build-hint" role="status" hidden></div>
+      <div id="demo-banner" hidden>FÁBRICA DE EJEMPLO · Tu partida está a salvo. Volvé con el botón del panel.</div>
+      <div id="tutorial-target" aria-hidden="true" hidden></div><section id="tutorial-card" aria-label="Tutorial de construcción" hidden><div class="tutorial-top"><span id="tutorial-progress"></span><button id="tutorial-exit" aria-label="Salir del tutorial y volver a mi partida">×</button></div><div class="meter"><i id="tutorial-meter"></i></div><div role="status" aria-live="polite"><h3 id="tutorial-title"></h3><p id="tutorial-instruction"></p></div><p id="tutorial-paused" hidden>La simulación está en pausa. Pulsá Espacio para continuar.</p><button id="tutorial-action"></button><button id="tutorial-finish" hidden>Volver a mi partida</button><div class="tutorial-bottom"><span>Práctica separada · tu partida se conserva</span><button id="tutorial-restart">Reiniciar</button></div></section><div id="toast" role="status">La primera fábrica empieza acá. Desarmá tu nave con E para recuperar materiales.</div>
+      <div class="construction-bar" aria-label="Herramientas de construcción">
+        <button id="tool-miner"><kbd>1</kbd><span class="tool-icon miner-icon">⚒</span><span>Minera<small>10 hierro · 5 piedra</small></span></button>
+        <button id="tool-belt"><kbd>2</kbd><span class="tool-icon belt-icon">»</span><span>Cinta<small>1 piedra</small></span></button>
+        <button id="tool-furnace"><kbd>3</kbd><span class="tool-icon furnace-icon">♨</span><span>Horno<small>6 hierro · 10 piedra</small></span></button>
+        <button id="tool-chest"><kbd>4</kbd><span class="tool-icon chest-icon">▣</span><span>Cofre<small>2 hierro · 4 piedra</small></span></button>
+        <button id="tool-generator"><kbd>5</kbd><span class="tool-icon generator-icon">ϟ</span><span>Generador<small>8 hierro · 8 piedra</small></span></button>
+        <button id="tool-pole"><kbd>6</kbd><span class="tool-icon pole-icon">┬</span><span>Poste<small>2 cobre · 2 piedra</small></span></button>
+        <button id="tool-assembler"><kbd>7</kbd><span class="tool-icon assembler-icon">⚙</span><span>Ensambladora<small>8 hierro · 6 piedra</small></span></button>
+        <button id="tool-lab"><kbd>8</kbd><span class="tool-icon lab-icon">⚗</span><span>Laboratorio<small>8 hierro · 8 cobre · 5 piedra</small></span></button>
+        <button id="tool-splitter"><kbd>9</kbd><span class="tool-icon splitter-icon">⑂</span><span>Divisor<small>2 placas · 2 piedra</small></span></button>
+        <button id="tool-inserter"><kbd>I</kbd><span class="tool-icon inserter-icon"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="7" y="18" width="18" height="10" rx="2" fill="#54738b" stroke="#10192e" stroke-width="2"/><path d="M16 22L9 11 22 7 27 14" fill="none" stroke="#10192e" stroke-width="7"/><path d="M16 22L9 11 22 7 27 14" fill="none" stroke="#ffc866" stroke-width="4"/><circle cx="9" cy="11" r="3" fill="#ff925e"/><path d="M25 14L23 19M28 14L30 18" stroke="#89f5e2" stroke-width="2"/></svg></span><span>Brazo robótico<small>2 placas Fe · 1 engranaje · 1 placa Cu</small></span></button>
+        <button id="tool-launchpad"><kbd>0</kbd><span class="tool-icon rocket-icon">↟</span><span>Plataforma<small>6 acero · 4 circuitos · 20 piedra</small></span></button>
+      </div>
+      <div class="map-bottom"><div class="actions"><button id="mode">B · Construir</button><button id="rotate">R · <span id="direction">Este →</span></button></div><div class="zoom"><button id="out" aria-label="Alejar">−</button><span id="zoom"></span><button id="in" aria-label="Acercar">+</button></div></div>
+      <div id="paused" hidden>SIMULACIÓN EN PAUSA<span>Espacio para continuar</span></div>
+    </section>
+    <aside>
+      <div class="section-label">CAPÍTULOS 05–07 / PROGRAMA ESPACIAL</div><h2>Tu industria.<br><em>Sin fronteras.</em></h2><p class="muted intro">Fabricá el cohete, colonizá nuevos mundos y abrí el espacio profundo.</p>
+      <section class="space-summary"><strong id="space-current">Aurora</strong><p id="space-summary"></p><button id="space-open">O · Programa espacial</button></section>
+      <section id="wreck-panel" class="wreck-panel"><strong>Tu nave accidentada</strong><p id="wreck-summary"></p><p>Acercate y mantené <kbd>E</kbd> para desarmarla. Recuperás hierro, piedra, cobre, carbón y placas para arrancar.</p></section>
+      <button id="demo" class="demo-button">▷ Ver industria de ejemplo</button>
+      <button id="space-demo" class="demo-button">↟ Ver lanzamiento de ejemplo</button>
+      <section class="power-panel"><div class="section-label">RED ELÉCTRICA</div><div class="power-numbers"><strong id="power-output">0 / 0 kW</strong><span id="power-status">Sin generación</span></div><div class="meter"><i id="power-meter"></i></div><p class="muted" id="power-detail"></p><div class="load-buttons"><button id="power-toggle">P · Ver cobertura</button><button id="research-open">T · Investigación</button></div><p id="active-research" class="research-summary">Sin investigación activa</p></section>
+      <section class="panel inspector" id="inspector" hidden>
+        <div class="inspector-top"><span class="section-label">INSPECTOR DE MÁQUINAS</span><button id="close-inspector" aria-label="Cerrar inspector">×</button></div>
+        <h3 id="machine-title"></h3><p id="machine-location" class="muted"></p><div id="machine-status" class="machine-status"></div><div id="machine-diagnostics"></div>
+        <button id="remove">Desmontar</button>
+        <dl><dt>Entrada / almacén</dt><dd id="machine-stock"></dd><dt>Salida</dt><dd id="machine-output"></dd></dl><p id="machine-production" class="muted"></p>
+        <div id="assembler-recipe" hidden><label for="recipe-select">Receta de fabricación</label><select id="recipe-select"><option value="gear">Engranajes</option><option value="wire">Cables</option><option value="science">Paquetes científicos</option><option value="circuit">Circuitos · requiere Electrónica</option></select><p id="recipe-description" class="muted"></p></div>
+        <label id="chest-export" class="export-label" hidden><input type="checkbox" id="export-checkbox"> Exportar por la salida</label>
+        <div id="furnace-load"><p class="muted">Cargar hasta 5 unidades del inventario:</p><div class="load-buttons"><button id="load-coal">Carbón</button><button id="load-iron">Hierro</button><button id="load-copper">Cobre</button></div></div>
+        <div id="machine-load" hidden><label for="input-item">Material de la mochila</label><div class="input-row"><select id="input-item"></select><button id="load-material">Cargar 5</button></div></div>
+        <button id="collect">Recoger salida</button><div class="load-buttons"><button id="machine-rotate">Girar salida</button></div>
+        <button id="recover-inputs">Recuperar entrada</button>
+        <button id="platform-open" hidden>O · Componentes y lanzamiento</button>
+      </section>
+      <section class="panel"><div class="section-label">MOCHILA DEL EXPLORADOR</div><div id="inventory"></div></section>
+      <section class="panel"><div class="section-label">PRODUCCIÓN / ÚLTIMO MINUTO</div><div id="production-rates"></div></section>
+      <section class="panel"><div class="section-label">MISIÓN / HACIA LAS ESTRELLAS</div><div id="goals"></div><p class="muted"><span id="machines">0</span> máquinas instaladas</p></section>
+      <details open><summary>Construir el primer cohete</summary><p>Completá <b>Astronáutica</b> en T. Las ensambladoras fabrican acero, aviónica, estructuras, motores y combustible sólido. Elegí sus recetas en el inspector.</p><p>Construí una plataforma de <b>2 × 2 casillas</b> con <b>0</b>, alimentala desde cintas o la mochila y esperá el ensamblaje con electricidad. Abrí <b>O</b> para ver materiales, preparar carga y lanzar.</p><p>La campaña recorre Aurora, Borealis y Vulcan. Después se habilitan expediciones procedurales con demanda creciente. Los lanzamientos dan créditos para mejorar productividad y lotes de transporte.</p></details>
+      <details><summary>Brazos y advertencias</summary><p>Pasá el mouse por una máquina para distinguir problemas de <b>entrada, salida y energía</b>.</p><p><b>I</b> construye un brazo robótico. Colocá <b>cofre → brazo → generador</b> en tres casillas consecutivas. Toma de atrás y entrega hacia la flecha; <b>R</b> gira. También toma de cintas y salidas de fábricas. Consume <b>2 kW</b> y necesita cobertura eléctrica. Cargá el primer carbón a mano para arrancar.</p><p>Costo: 2 placas de hierro, 1 engranaje y 1 placa de cobre. El cofre puede mantener su exportación desactivada.</p></details><details><summary>Energía y tecnología</summary><p><b>5</b> construye un generador: cargá carbón en su inspector. Entrega 60 kW base; cada carbón dura 20 segundos de actividad. Los postes <b>6</b> se conectan hasta 6 casillas y alimentan máquinas a 4 casillas.</p><p>Mineras (5 kW), ensambladoras (10 kW), laboratorios (12 kW) y plataformas (20 kW) necesitan electricidad. Los biomas modifican la generación y el consumo minero. Una red sobrecargada reduce la velocidad.</p></details>
+      <details open><summary>Cómo conectar tu fábrica</summary><div class="recipe-flow">MINERA <span>→</span> CINTA <span>→</span> HORNO <span>→</span> COFRE</div><p>Las flechas indican la salida. Girá con <b>R</b>. Cada máquina entrega a la casilla vecina: también podés conectarlas directamente.</p><p>El horno recibe hierro o cobre y carbón por cualquier lado. Produce una placa cada 2 segundos. Un carbón alcanza para 4 placas.</p><p>Podés cargar carbón a mano desde el inspector, o construir otra minera y una línea de cintas. El cofre guarda hasta 200 unidades.</p></details>
+      <details><summary>Controles</summary><p><b>WASD / flechas</b> · caminar<br><b>E</b> · mantener para minar<br><b>1–0</b> · seleccionar construcción<br><b>Arrastrar con cinta elegida</b> · trazar una línea con curvas automáticas<br><b>B / Esc</b> · construir / explorar<br><b>I</b> · construir brazo robótico<br><b>R</b> · girar salida<br><b>P</b> · cobertura eléctrica<br><b>T</b> · árbol tecnológico<br><b>O</b> · programa espacial<br><b>Clic / F</b> · inspeccionar<br><b>Clic derecho / X</b> · desmontar bajo el cursor, incluido el generador<br><b>Rueda / + / −</b> · zoom<br><b>Espacio</b> · pausar</p><p>Construcción e interacción: hasta 4 casillas. Las cintas y postes permiten caminar encima. Desmontar devuelve el costo y los objetos; el combustible ya encendido se pierde.</p></details>
+      <form id="new-world"><label for="seed">Semilla de nueva expedición</label><div class="seed-row"><input id="seed" value="aurora-01" maxlength="48" required><button>Nueva</button></div></form>
+    </aside>
+  </main>
+  <footer><span><i></i> HORIZONTES INFINITOS</span><span>1–0 construir · R girar · P electricidad · T tecnologías · O espacio</span><span id="mode-label">EXPLORACIÓN</span></footer>
+</div>
+<dialog id="main-menu" class="start-menu" aria-labelledby="menu-title">
+  <div class="menu-backdrop-art" aria-hidden="true"><div class="menu-orbit"></div><div class="menu-planet"></div><div class="menu-rocket"><i></i></div></div>
+  <div class="menu-shell">
+    <section class="menu-intro"><span class="eyebrow">PROGRAMA AURORA · HORIZONTES INFINITOS</span><h2 id="menu-title">Rocket Mining<br><em>Tycoon</em></h2><p>Una mena. Una fábrica.<br>Todo un universo por construir.</p><div class="menu-route"><span>01 / EXTRAÉ</span><b>→</b><span>02 / AUTOMATIZÁ</span><b>→</b><span>03 / DESPEGÁ</span></div><small>EXPLORACIÓN · INDUSTRIA · COLONIAS</small></section>
+    <section class="menu-panel" aria-label="Opciones de inicio">
+      <div id="menu-home"><span class="eyebrow">CENTRO DE EXPEDICIONES</span><h3>Tu próxima frontera</h3><button id="menu-resume" class="menu-primary" hidden>Continuar expedición <span>→</span></button><button id="menu-new-button" class="menu-primary">Nueva partida <span>＋</span></button><button id="menu-load">Cargar partida <span>↗</span></button><p id="menu-save-summary" class="menu-summary"></p><button id="menu-tutorial">Tutorial de construcción <span>▷</span></button><div class="menu-secondary"><button id="menu-options-button">Opciones</button><button id="menu-controls-button">Controles</button></div><p id="menu-notice" role="status"></p><small class="menu-local-note">Guardado local en este navegador · un espacio de partida</small></div>
+      <form id="menu-new" hidden><span class="eyebrow">UNA NUEVA EXPEDICIÓN</span><h3>Elegí tu mundo</h3><label for="menu-seed">Semilla del planeta</label><input id="menu-seed" maxlength="48" value="aurora-01" required autocomplete="off"><p>La misma semilla genera los mismos yacimientos.</p><p id="menu-new-warning" class="menu-summary"></p><button class="menu-primary" type="submit">Comenzar expedición →</button><button type="button" data-menu-back>← Volver al menú</button></form>
+      <div id="menu-options" hidden><span class="eyebrow">A TU MANERA</span><h3>Opciones de juego</h3><label for="menu-zoom">Zoom del mapa</label><select id="menu-zoom"><option value="0.8">80 % · vista amplia</option><option value="1">100 %</option><option value="1.45">145 % · recomendado</option><option value="2">200 %</option><option value="2.6">260 % · cerca</option></select><label class="menu-checkbox"><input id="menu-coverage" type="checkbox"> Mostrar cobertura eléctrica</label><label class="menu-checkbox"><input id="menu-motion" type="checkbox"> Reducir animaciones de la interfaz</label><p id="menu-options-status" role="status"></p><button data-menu-back>← Volver al menú</button></div>
+      <div id="menu-controls" hidden><span class="eyebrow">TU PRIMER TURNO EN AURORA</span><h3>Controles</h3><dl class="menu-controls-list"><dt>WASD / flechas</dt><dd>Caminar</dd><dt>1–0 / clic</dt><dd>Elegir edificio y construir</dd><dt>I</dt><dd>Construir brazo robótico: toma de atrás y entrega delante; 2 kW</dd><dt>R</dt><dd>Girar la salida</dd><dt>B / Esc</dt><dd>Construir o explorar</dd><dt>Clic derecho / X</dt><dd>Desmontar máquinas y generadores cercanos</dd><dt>E</dt><dd>Mantener para minar</dd><dt>Clic / F</dt><dd>Inspeccionar máquinas</dd><dt>T / O</dt><dd>Tecnologías / programa espacial</dd><dt>P / Espacio</dt><dd>Red eléctrica / pausa</dd><dt>Rueda / + / −</dt><dd>Zoom</dd><dt>Menú</dt><dd>Guardar y volver a este panel</dd></dl><button data-menu-back>← Volver al menú</button></div>
+    </section>
+  </div><div class="menu-footer"><span>ROCKET MINING TYCOON · 0.8</span><span>MINERÍA → CIENCIA → ESPACIO PROFUNDO</span></div>
+</dialog><dialog id="confirmation"><h2>¿Comenzar otra expedición?</h2><p>Se reemplazará la partida guardada en este navegador.</p><p id="new-game-error" role="status"></p><div class="actions"><button id="cancel-new">Conservar partida</button><button id="confirm-new">Reemplazar partida</button></div></dialog>
+<dialog id="research-dialog" class="research-dialog"><div class="research-heading"><div><span class="eyebrow">PROGRAMA CIENTÍFICO AURORA</span><h2>Árbol de tecnologías</h2></div><button id="research-close" aria-label="Cerrar investigación">×</button></div><p class="muted">Cada paquete científico se procesa en 2 segundos en un laboratorio con electricidad. Podés cambiar de investigación sin perder los paquetes ya procesados.</p><div id="development-phases" class="development-phases" aria-label="Fases de progresión"></div>
+<div class="map-toolbar"><div role="tablist" aria-label="Vista del árbol"><button id="map-tab-technology" role="tab" aria-selected="true" aria-controls="map-view-technology">Tecnologías</button><button id="map-tab-recipes" role="tab" aria-selected="false" aria-controls="map-view-recipes">Recursos y recetas</button></div><div class="map-navigation"><button id="map-left" aria-label="Ver etapas anteriores">←</button><button id="map-right" aria-label="Ver etapas siguientes">→</button></div></div>
+<p id="map-direction" class="map-direction"></p>
+<section id="map-view-technology" role="tabpanel" aria-labelledby="map-tab-technology"><div id="technology-scroll" class="map-scroll" tabindex="0" aria-label="Árbol tecnológico horizontal; desplazate para ver las siguientes tecnologías"><div id="tech-tree"></div></div></section>
+<section id="map-view-recipes" role="tabpanel" aria-labelledby="map-tab-recipes" hidden><div class="map-legend"><span>● Materia prima</span><span>● Transformación</span><span>◇ Requiere tecnología</span><span>⋯ Energía / combustible</span><button id="map-clear">Ver todas las conexiones</button></div><div id="recipe-scroll" class="map-scroll" tabindex="0" aria-label="Diagrama horizontal de recursos y recetas; seleccioná un nodo para ver sus dependencias"><div id="recipe-map"></div></div><section id="recipe-details" class="recipe-details" aria-label="Detalle del recurso seleccionado" aria-live="polite"></section></section>
+</dialog>
+<dialog id="space-dialog" class="space-dialog">
+  <div class="research-heading"><div><span class="eyebrow">PROGRAMA ESPACIAL AURORA</span><h2 id="mission-title">Encender las estrellas</h2></div><button id="space-close" aria-label="Cerrar programa espacial">×</button></div>
+  <p id="planet-description" class="muted"></p><p id="space-notice" class="space-notice" role="status">Elegí una plataforma o una colonia para ver las acciones disponibles.</p><div id="campaign-progress" class="campaign-progress"></div>
+  <div class="space-columns"><section><h3>Próximo cohete</h3><p id="rocket-target" class="space-target"></p><p id="platform-status" class="muted"></p><div id="rocket-requirements"></div><p id="rocket-assembly" class="muted"></p><div class="load-buttons"><button id="rocket-load">Cargar componentes disponibles</button><button id="rocket-launch">Lanzar cohete</button></div>
+  <details><summary>Carga adicional del cohete</summary><p class="muted">Viaja al nuevo planeta además de los componentes del cohete.</p><div class="input-row"><select id="cargo-item" aria-label="Material de carga del cohete"></select><button id="cargo-load">Añadir 5</button></div><p id="cargo-content" class="muted"></p><button id="cargo-unload">Recuperar carga</button></details></section>
+  <section><h3>Colonias descubiertas</h3><div id="colony-list"></div><p class="muted">El traslado personal es gratuito. Inventarios y fábricas quedan en cada colonia; las colonias inactivas están en pausa.</p><h3>Transporte interplanetario</h3><label for="shipment-target">Destino</label><select id="shipment-target"></select><label for="shipment-item">Material</label><select id="shipment-item"></select><div class="input-row"><input id="shipment-amount" type="number" min="1" max="100" value="5" aria-label="Cantidad de carga"><button id="shipment-send">Enviar · 2 combustibles</button></div><p id="shipment-list" class="muted"></p><h3>Industria orbital</h3><p id="orbital-stats" class="muted"></p><button id="orbital-upgrade"></button><p class="muted">Cada mejora suma productividad. Cada dos niveles duplica los lotes de minería y transporte, hasta 256 unidades por lote.</p></section></div>
+</dialog>
+<script src="./juego.js"></script>
+</body></html>
+
+
+
+
+
+
+
+
+
+
+
+

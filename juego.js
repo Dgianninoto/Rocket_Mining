@@ -43,22 +43,23 @@ function colonyValid(c, s) {
   if (!object(c) || typeof c.seed !== "string" || c.seed.length < 1 || c.seed.length > 128 || !object(c.player) || !finite(c.player.x) || !finite(c.player.y) || c.player.x < 0.28 || c.player.y < 0.28 || c.player.x > SIZE - 0.28 || c.player.y > SIZE - 0.28 || !stock(c.inventory) || !Array.isArray(c.machines) || c.machines.length > SIZE * SIZE || !object(c.depleted)) return false;
   const batch = orbitalBatch(s.orbitalRank), requirements = rocketRequirements(s.highestPlanet);
   const validMachine = (m) => {
-    if (!object(m) || !tile(m.x) || !tile(m.y) || !TYPES.includes(m.type) || m.x + machineSize(m) > SIZE || m.y + machineSize(m) > SIZE || m.size !== void 0 && m.size !== 1 && m.size !== 2 || !dir(m.dir) || !dir(m.entry) || !stock(m.stock) || !stock(m.output) || !stock(m.cargo) || totalCargo(m.cargo) > 100 + s.orbitalRank * 25 || !finite(m.progress) || !finite(m.fuel) || m.fuel > (m.type === "generator" ? 20 : 8) || !count(m.produced) || !Object.hasOwn(RECIPES, m.recipe) || typeof m.exporting !== "boolean" || m.branch !== 0 && m.branch !== 1) return false;
-    const duration = m.type === "launchpad" ? 6 : m.type === "furnace" || m.type === "lab" ? 2 : m.type === "assembler" ? RECIPES[m.recipe].seconds : 1;
+    if (!object(m) || !tile(m.x) || !tile(m.y) || !TYPES.includes(m.type) || m.x + machineSize(m) > SIZE || m.y + machineSize(m) > SIZE || m.size !== void 0 && m.size !== 1 && m.size !== 2 || !dir(m.dir) || !dir(m.entry) || !stock(m.stock) || !stock(m.output) || !stock(m.cargo) || totalCargo(m.cargo) > 100 + s.orbitalRank * 25 || !finite(m.progress) || !finite(m.fuel) || m.fuel > (m.type === "generator" ? 20 : 8) || !count(m.produced) || !(m.type === "assembler" && m.recipe === "none") && !Object.hasOwn(RECIPES, m.recipe) || typeof m.exporting !== "boolean" || m.branch !== 0 && m.branch !== 1) return false;
+    const duration = m.type === "launchpad" ? 6 : m.type === "furnace" || m.type === "lab" ? 2 : m.type === "assembler" && m.recipe !== "none" ? RECIPES[m.recipe].seconds : 1;
     if (m.type === "launchpad" ? m.progress > duration : m.progress >= duration) return false;
     const sum = (v) => ITEMS.reduce((a, i) => a + v[i], 0);
     if (m.type !== "launchpad" && sum(m.cargo) !== 0) return false;
-    if (["belt", "splitter", "chest"].includes(m.type)) return sum(m.stock) <= (m.type === "belt" ? 1 : m.type === "splitter" ? 2 : 200) * batch && sum(m.output) === 0;
+    if (["belt", "splitter", "chest", "undergroundIn", "undergroundOut"].includes(m.type)) return sum(m.stock) <= (["belt", "undergroundIn", "undergroundOut"].includes(m.type) ? 1 : m.type === "splitter" ? 2 : 200) * batch && sum(m.output) === 0;
     if (m.type === "miner") return sum(m.stock) === 0 && sum(m.output) <= 5 * batch;
     if (m.type === "pole") return sum(m.stock) + sum(m.output) === 0;
     if (m.type === "inserter") return sum(m.stock) + sum(m.output) === 0 && m.progress <= 0.8 && m.fuel === 0;
     if (m.type === "generator") return m.stock.coal <= 10 && sum(m.stock) === m.stock.coal && sum(m.output) === 0;
     if (m.type === "lab") return m.stock.science <= 30 * batch && sum(m.stock) === m.stock.science && sum(m.output) === 0;
+    if (m.type === "assembler" && m.recipe === "none" && m.progress !== 0) return false;
     if (m.type === "assembler") return ITEMS.every((i) => m.stock[i] <= 20 * batch) && sum(m.output) <= 10 * batch;
     if (m.type === "launchpad") return sum(m.output) === 0 && ITEMS.every((i) => m.stock[i] <= (requirements[i] ?? 0));
     return m.stock.iron <= 5 * batch && m.stock.copper <= 5 * batch && m.stock.coal <= 5 * batch && sum(m.stock) === m.stock.iron + m.stock.copper + m.stock.coal && sum(m.output) <= 5 * batch;
   };
-  return c.machines.every(validMachine) && new Set(c.machines.flatMap((m) => Array.from({ length: machineSize(m) ** 2 }, (_, i) => `${m.x + i % machineSize(m)},${m.y + Math.floor(i / machineSize(m))}`))).size === c.machines.reduce((n, m) => n + machineSize(m) ** 2, 0) && Object.entries(c.depleted).every(([k, n]) => /^\d+,\d+$/.test(k) && k.split(",").every((v) => tile(Number(v))) && count(n)) && !c.machines.some((m) => !["belt", "splitter", "pole"].includes(m.type) && overlapsPlayer(m, c.player.x, c.player.y, 0.76));
+  return c.machines.every(validMachine) && new Set(c.machines.flatMap((m) => Array.from({ length: machineSize(m) ** 2 }, (_, i) => `${m.x + i % machineSize(m)},${m.y + Math.floor(i / machineSize(m))}`))).size === c.machines.reduce((n, m) => n + machineSize(m) ** 2, 0) && Object.entries(c.depleted).every(([k, n]) => /^\d+,\d+$/.test(k) && k.split(",").every((v) => tile(Number(v))) && count(n)) && !c.machines.some((m) => !["belt", "splitter", "pole", "undergroundIn", "undergroundOut"].includes(m.type) && overlapsPlayer(m, c.player.x, c.player.y, 0.76));
 }
 function totalCargo(v) {
   return ITEMS.reduce((n, i) => n + v[i], 0);
@@ -109,7 +110,7 @@ function migrateState(value) {
   if (validState(value)) return value;
   if (!object(value)) return null;
   const old = value;
-  if (![2, 3, 4].includes(old.version) || !object(old.inventory) || !Array.isArray(old.machines) || !old.machines.every((m) => m && finite(m.progress) && m.progress < (old.version === 2 ? 1 : m.type === "furnace" || m.type === "lab" ? 2 : m.type === "assembler" ? RECIPES[m.recipe]?.seconds ?? 0 : 1))) return null;
+  if (![2, 3, 4].includes(old.version) || !object(old.inventory) || !Array.isArray(old.machines) || !old.machines.every((m) => m && finite(m.progress) && m.progress < (old.version === 2 ? 1 : m.type === "furnace" || m.type === "lab" ? 2 : m.type === "assembler" && m.recipe !== "none" ? RECIPES[m.recipe]?.seconds ?? 0 : 1))) return null;
   const base = createState(old.seed), scientific = old.version === 4;
   const migrated = { ...base, seed: old.seed, player: old.player, inventory: { ...inventory(), ...old.inventory }, depleted: old.depleted, mined: old.mined, time: old.time, smelted: old.version === 2 ? 0 : old.smelted, delivered: old.version === 2 ? 0 : old.delivered, kitClaimed: old.version === 2 ? false : old.kitClaimed, industrialKit: scientific ? old.industrialKit : false, production: scientific ? { ...inventory(), ...old.production } : inventory(), research: scientific ? old.research : null, unlocked: scientific ? old.unlocked : [], techProgress: scientific ? { ...base.techProgress, ...old.techProgress } : base.techProgress, machines: old.machines.map((m) => old.version === 2 ? { ...machine("miner", m.x, m.y), progress: m.progress } : { ...machine(m.type, m.x, m.y, m.dir), ...m, entry: scientific ? m.entry : (m.dir + 2) % 4, recipe: scientific ? m.recipe : "gear", exporting: scientific ? m.exporting : false, branch: scientific ? m.branch : 0, cargo: inventory(), stock: { ...inventory(), ...m.stock }, output: { ...inventory(), ...m.output } }) };
   return validState(migrated) ? migrated : null;
@@ -126,10 +127,10 @@ var COLORS = { iron: "#9cc8df", copper: "#ec9b5b", coal: "#73788f", stone: "#d2c
 var ITEMS = [...RESOURCES, "ironPlate", "copperPlate", "gear", "wire", "circuit", "science", "steel", "advancedCircuit", "rocketFrame", "rocketEngine", "rocketFuel", "alloy", "navCore"];
 var ITEM_NAMES = { ...NAMES, ironPlate: "Placa de hierro", copperPlate: "Placa de cobre", gear: "Engranaje", wire: "Cable", circuit: "Circuito", science: "Paquete cient\xEDfico", steel: "Acero", advancedCircuit: "Avi\xF3nica", rocketFrame: "Estructura espacial", rocketEngine: "Motor de cohete", rocketFuel: "Combustible s\xF3lido", alloy: "Aleaci\xF3n de titanio", navCore: "N\xFAcleo de navegaci\xF3n" };
 var ITEM_COLORS = { ...COLORS, iron: "#48d9ff", copper: "#ff8e36", coal: "#a58acb", stone: "#f2d796", ironPlate: "#b5f2ff", copperPlate: "#ffbf6b", gear: "#c6d8ed", wire: "#ffbf47", circuit: "#7dffa1", science: "#ff74b2", steel: "#d5dcec", advancedCircuit: "#f4a0ff", rocketFrame: "#91d1f5", rocketEngine: "#ffad78", rocketFuel: "#e6ec85", alloy: "#d4c3ff", navCore: "#f678d2" };
-var TYPES = ["miner", "belt", "furnace", "chest", "generator", "pole", "assembler", "lab", "splitter", "launchpad", "inserter"];
+var TYPES = ["miner", "belt", "furnace", "chest", "generator", "pole", "assembler", "lab", "splitter", "launchpad", "inserter", "undergroundIn", "undergroundOut"];
 var DIRECTIONS = [{ x: 1, y: 0, label: "Este \u2192" }, { x: 0, y: 1, label: "Sur \u2193" }, { x: -1, y: 0, label: "Oeste \u2190" }, { x: 0, y: -1, label: "Norte \u2191" }];
-var MACHINE_NAMES = { miner: "Minera", belt: "Cinta", furnace: "Horno", chest: "Cofre", generator: "Generador", pole: "Poste", assembler: "Ensambladora", lab: "Laboratorio", splitter: "Divisor", launchpad: "Plataforma espacial", inserter: "Brazo rob\xF3tico" };
-var COSTS = { miner: { iron: 10, stone: 5 }, belt: { stone: 1 }, furnace: { iron: 6, stone: 10 }, chest: { iron: 2, stone: 4 }, generator: { iron: 8, stone: 8 }, pole: { copper: 2, stone: 2 }, assembler: { iron: 8, stone: 6 }, lab: { iron: 8, copper: 8, stone: 5 }, splitter: { ironPlate: 2, stone: 2 }, launchpad: { steel: 6, circuit: 4, stone: 20 }, inserter: { ironPlate: 2, gear: 1, copperPlate: 1 } };
+var MACHINE_NAMES = { miner: "Minera", belt: "Cinta", furnace: "Horno", chest: "Cofre", generator: "Generador", pole: "Poste", assembler: "Ensambladora", lab: "Laboratorio", splitter: "Divisor", launchpad: "Plataforma espacial", inserter: "Brazo rob\xF3tico", undergroundIn: "Entrada subterr\xE1nea", undergroundOut: "Salida subterr\xE1nea" };
+var COSTS = { miner: { iron: 10, stone: 5 }, belt: { stone: 1 }, furnace: { iron: 6, stone: 10 }, chest: { iron: 2, stone: 4 }, generator: { iron: 8, stone: 8 }, pole: { copper: 2, stone: 2 }, assembler: { iron: 8, stone: 6 }, lab: { iron: 8, copper: 8, stone: 5 }, splitter: { ironPlate: 2, stone: 2 }, launchpad: { steel: 6, circuit: 4, stone: 20 }, inserter: { ironPlate: 2, gear: 1, copperPlate: 1 }, undergroundIn: { stone: 2, ironPlate: 1 }, undergroundOut: { stone: 2, ironPlate: 1 } };
 var RECIPES = {
   gear: { name: "Engranajes", input: { ironPlate: 2 }, output: { gear: 1 }, seconds: 2, tech: null },
   wire: { name: "Cables", input: { copperPlate: 1 }, output: { wire: 2 }, seconds: 1, tech: null },
@@ -187,6 +188,9 @@ function createState(seed = "aurora-01") {
 }
 var World = class {
   chunks = /* @__PURE__ */ new Map();
+  machineIndex = /* @__PURE__ */ new Map();
+  indexedMachines = null;
+  indexedLength = -1;
   seed;
   state;
   constructor(state) {
@@ -372,6 +376,38 @@ var World = class {
     return { resource: rare ?? t.resource, amount: Math.floor((rare ? 300 : t.amount) * p.richness) };
   }
   generateBase(x, y) {
+    if (this.state.originSeed.startsWith("m4:")) {
+      const starts2 = [{ x: 58, y: 48, r: "iron" }, { x: 43, y: 58, r: "stone" }, { x: 28, y: 44, r: "copper" }, { x: 51, y: 28, r: "coal" }];
+      for (const p of starts2) if (Math.hypot(x - p.x, y - p.y) < 4.5) return { resource: p.r, amount: 350 + Math.floor(hash(x, y, this.seed) * 300) };
+      if (Math.hypot(x - 48, y - 48) < 22) return { resource: null, amount: 0 };
+      for (let gy = Math.floor(y / 24) - 1; gy <= Math.floor(y / 24) + 1; gy++) for (let gx = Math.floor(x / 24) - 1; gx <= Math.floor(x / 24) + 1; gx++) {
+        const h2 = hash(gx, gy, this.seed), px = gx * 24 + 10 + hash(gx + 300, gy, this.seed) * 4, py = gy * 24 + 10 + hash(gx, gy + 300, this.seed) * 4;
+        if (h2 > 0.5 && Math.hypot(x - px, y - py) < 5.2 + h2 * 0.8) return { resource: RESOURCES[Math.floor(hash(gx + 99, gy + 99, this.seed) * 4)], amount: 350 + Math.floor(h2 * 400) };
+      }
+      return { resource: null, amount: 0 };
+    }
+    if (this.state.originSeed.startsWith("m3:")) {
+      const starts2 = [{ x: 58, y: 48, r: "iron" }, { x: 43, y: 58, r: "stone" }, { x: 38, y: 44, r: "copper" }, { x: 51, y: 38, r: "coal" }];
+      for (const p of starts2) if (Math.hypot(x - p.x, y - p.y) < 4.5) return { resource: p.r, amount: 350 + Math.floor(hash(x, y, this.seed) * 300) };
+      if (Math.hypot(x - 48, y - 48) < 18) return { resource: null, amount: 0 };
+      for (let gy = Math.floor(y / 24) - 1; gy <= Math.floor(y / 24) + 1; gy++) for (let gx = Math.floor(x / 24) - 1; gx <= Math.floor(x / 24) + 1; gx++) {
+        const h2 = hash(gx, gy, this.seed);
+        const px = gx * 24 + 10 + hash(gx + 300, gy, this.seed) * 4, py = gy * 24 + 10 + hash(gx, gy + 300, this.seed) * 4;
+        if (h2 > 0.5 && Math.hypot(x - px, y - py) < 5.2 + h2 * 0.8) return { resource: RESOURCES[Math.floor(hash(gx + 99, gy + 99, this.seed) * 4)], amount: 350 + Math.floor(h2 * 400) };
+      }
+      return { resource: null, amount: 0 };
+    }
+    if (this.state.originSeed.startsWith("m2:")) {
+      const starts2 = [{ x: 54, y: 48, r: "iron" }, { x: 45, y: 54, r: "stone" }, { x: 41, y: 46, r: "copper" }, { x: 51, y: 41, r: "coal" }];
+      for (const p of starts2) if (Math.hypot(x - p.x, y - p.y) < 3.4) return { resource: p.r, amount: 350 + Math.floor(hash(x, y, this.seed) * 300) };
+      if (Math.hypot(x - 48, y - 48) < 12) return { resource: null, amount: 0 };
+      for (let gy = Math.floor(y / 16) - 1; gy <= Math.floor(y / 16) + 1; gy++) for (let gx = Math.floor(x / 16) - 1; gx <= Math.floor(x / 16) + 1; gx++) {
+        const h2 = hash(gx, gy, this.seed);
+        const px = gx * 16 + 3 + hash(gx + 300, gy, this.seed) * 10, py = gy * 16 + 3 + hash(gx, gy + 300, this.seed) * 10;
+        if (h2 > 0.5 && Math.hypot(x - px, y - py) < 3.6 + h2 * 1.4) return { resource: RESOURCES[Math.floor(hash(gx + 99, gy + 99, this.seed) * 4)], amount: 350 + Math.floor(h2 * 400) };
+      }
+      return { resource: null, amount: 0 };
+    }
     const starts = [{ x: 51, y: 48, r: "iron" }, { x: 46, y: 51, r: "stone" }, { x: 43, y: 46, r: "copper" }, { x: 51, y: 43, r: "coal" }];
     for (const p of starts) if (Math.hypot(x - p.x, y - p.y) < 1.8) return { resource: p.r, amount: 150 + Math.floor(hash(x, y, this.seed) * 180) };
     for (let gy = Math.floor(y / 10) - 1; gy <= Math.floor(y / 10) + 1; gy++) for (let gx = Math.floor(x / 10) - 1; gx <= Math.floor(x / 10) + 1; gx++) {
@@ -406,7 +442,14 @@ var World = class {
     return best;
   }
   at(x, y) {
-    return this.state.machines.find((m) => x >= m.x && y >= m.y && x < m.x + machineSize(m) && y < m.y + machineSize(m));
+    const machines = this.state.machines;
+    if (this.indexedMachines !== machines || this.indexedLength !== machines.length) {
+      this.machineIndex.clear();
+      for (const m of machines) for (let dy = 0; dy < machineSize(m); dy++) for (let dx = 0; dx < machineSize(m); dx++) this.machineIndex.set(`${m.x + dx},${m.y + dy}`, m);
+      this.indexedMachines = machines;
+      this.indexedLength = machines.length;
+    }
+    return this.machineIndex.get(`${x},${y}`);
   }
   hasTech(id) {
     return this.state.unlocked.includes(id);
@@ -418,12 +461,21 @@ var World = class {
   beltDuration() {
     return this.hasTech("logistics") ? 0.2 : 0.4;
   }
+  undergroundExit(m) {
+    if (m.type !== "undergroundIn") return;
+    const d = DIRECTIONS[m.dir];
+    for (let n = 2; n <= 6; n++) {
+      const next = this.at(m.x + d.x * n, m.y + d.y * n);
+      if (next?.type === "undergroundIn" && next.dir === m.dir) return;
+      if (next?.type === "undergroundOut" && next.dir === m.dir) return next;
+    }
+  }
   beltInputs(m) {
     const inputs = [];
     for (let side = 0; side < 4; side++) {
-      if (side === m.dir) continue;
+      if (side === m.dir || m.type === "undergroundIn" && side !== (m.dir + 2) % 4 || m.type === "undergroundOut") continue;
       const d = DIRECTIONS[side], n = this.at(m.x + d.x, m.y + d.y);
-      if (!n || n.type === "pole" || n.type === "lab" || n.type === "generator" || n.type === "chest" && !n.exporting) continue;
+      if (!n || n.type === "undergroundIn" || n.type === "pole" || n.type === "lab" || n.type === "generator" || n.type === "chest" && !n.exporting) continue;
       const exits = n.type === "splitter" ? [n.dir, (n.dir + 1) % 4] : [n.dir];
       if (exits.some((dir2) => n.x + DIRECTIONS[dir2].x === m.x && n.y + DIRECTIONS[dir2].y === m.y)) inputs.push(side);
     }
@@ -458,7 +510,7 @@ var World = class {
     if (type === "launchpad" && !this.hasTech("astronautics")) return "Investig\xE1 Astron\xE1utica para desbloquear la plataforma.";
     if (type === "miner" && (!t.resource || t.amount <= 0)) return t.resource ? "Este yacimiento est\xE1 agotado. Eleg\xED otra casilla." : "La minera necesita una mena de hierro, cobre, carb\xF3n, piedra, titanio o cristal.";
     if (!this.inReach({ x, y, type })) return "Acercate: el alcance es de 4 casillas.";
-    if (!["belt", "splitter", "pole"].includes(type) && overlapsPlayer({ x, y, type }, s.player.x, s.player.y)) return "El personaje est\xE1 demasiado cerca. Movete un poco para dejar libre la casilla.";
+    if (!["belt", "splitter", "pole", "undergroundIn", "undergroundOut"].includes(type) && overlapsPlayer({ x, y, type }, s.player.x, s.player.y)) return "El personaje est\xE1 demasiado cerca. Movete un poco para dejar libre la casilla.";
     const missing = this.missingMaterials(type);
     if (missing) return `Faltan materiales: ${missing}.`;
     return null;
@@ -468,7 +520,10 @@ var World = class {
     const error = this.placement(x, y, type);
     if (error) return error;
     for (const [i, n] of Object.entries(COSTS[type])) this.state.inventory[i] -= n;
-    this.state.machines.push(machine(type, x, y, dir2));
+    const built = machine(type, x, y, dir2);
+    if (type === "assembler") built.recipe = "none";
+    this.state.machines.push(built);
+    this.indexedLength = -1;
     return null;
   }
   claimKit() {
@@ -491,6 +546,7 @@ var World = class {
     if (!this.state.machines.includes(m) || !this.inReach(m)) return "Acercate para desmontar la m\xE1quina.";
     for (const i of ITEMS) this.state.inventory[i] += m.stock[i] + m.output[i] + m.cargo[i] + (COSTS[m.type][i] ?? 0);
     this.state.machines.splice(this.state.machines.indexOf(m), 1);
+    this.indexedLength = -1;
     return null;
   }
   collect(m) {
@@ -509,24 +565,24 @@ var World = class {
   }
   inputLimit(m, item) {
     const batch = this.batchSize();
-    if (m.type === "belt") return batch;
+    if (m.type === "belt" || m.type === "undergroundIn" || m.type === "undergroundOut") return batch;
     if (m.type === "splitter") return 2 * batch;
     if (m.type === "chest") return 200 * batch;
     if (m.type === "furnace") return ["iron", "copper", "coal"].includes(item) ? 5 * batch : 0;
     if (m.type === "generator") return item === "coal" ? 10 : 0;
     if (m.type === "lab") return item === "science" ? 30 * batch : 0;
-    if (m.type === "assembler") return item in RECIPES[m.recipe].input ? 20 * batch : 0;
+    if (m.type === "assembler") return m.recipe !== "none" && item in RECIPES[m.recipe].input ? 20 * batch : 0;
     if (m.type === "launchpad") return this.requirements()[item] ?? 0;
     return 0;
   }
   accepts(m, item) {
     const cap = this.inputLimit(m, item);
-    return cap > 0 && (m.type === "belt" || m.type === "splitter" || m.type === "chest" ? total(m.stock) < cap : m.stock[item] < cap);
+    return cap > 0 && (["belt", "splitter", "chest", "undergroundIn", "undergroundOut"].includes(m.type) ? total(m.stock) < cap : m.stock[item] < cap);
   }
   loadMachine(m, item) {
     if (this.state.flight) return "Esper\xE1 a que termine el lanzamiento.";
     if (!this.state.machines.includes(m) || !this.inReach(m)) return "Acercate a la m\xE1quina para cargar materiales.";
-    const cap = this.inputLimit(m, item), used = ["chest", "belt", "splitter"].includes(m.type) ? total(m.stock) : m.stock[item];
+    const cap = this.inputLimit(m, item), used = ["chest", "belt", "splitter", "undergroundIn", "undergroundOut"].includes(m.type) ? total(m.stock) : m.stock[item];
     const amount = Math.min(5, cap - used, this.state.inventory[item]);
     if (amount <= 0) return "Material incompatible, entrada llena o mochila sin existencias.";
     this.state.inventory[item] -= amount;
@@ -560,7 +616,7 @@ var World = class {
     return null;
   }
   transferStock(m) {
-    return ["belt", "splitter", "chest"].includes(m.type) ? m.stock : m.output;
+    return ["belt", "splitter", "chest", "undergroundIn", "undergroundOut"].includes(m.type) ? m.stock : m.output;
   }
   inserterEnds(m) {
     const d = DIRECTIONS[m.dir];
@@ -577,6 +633,7 @@ var World = class {
     if (m.type === "miner") return total(m.output) < this.outputLimit(m) && this.tile(m.x, m.y).amount > 0;
     if (m.type === "lab") return !!this.state.research && m.stock.science > 0;
     if (m.type === "assembler") {
+      if (m.recipe === "none") return false;
       const r = RECIPES[m.recipe];
       return this.recipeUnlocked(m.recipe) && Object.entries(r.input).every(([i, n]) => m.stock[i] >= n) && total(m.output) + Object.values(r.output).reduce((a, b) => a + b, 0) <= this.outputLimit(m);
     }
@@ -641,6 +698,7 @@ var World = class {
       if (total(m.output) >= this.outputLimit(m)) return "Salida llena";
     }
     if (DEMAND[m.type]) {
+      if (m.type === "assembler" && m.recipe === "none") return "Eleg\xED una receta";
       if (m.type === "assembler" && !this.recipeUnlocked(m.recipe)) return "Receta bloqueada";
       if (m.type === "lab" && !this.state.research) return "Eleg\xED una investigaci\xF3n";
       if (m.type === "lab" && m.stock.science === 0) return "Sin paquetes cient\xEDficos";
@@ -656,6 +714,13 @@ var World = class {
     if (m.type === "pole") return "Distribuye hasta 4 casillas";
     if (m.type === "miner") return "Extrayendo";
     if (m.type === "chest") return m.exporting ? "Exportando" : total(m.stock) >= 200 * this.batchSize() ? "Cofre lleno" : "Almacenando";
+    if (m.type === "undergroundIn") {
+      const end = this.undergroundExit(m);
+      if (!end) return "Sin salida subterr\xE1nea alineada";
+      if (total(end.stock) >= this.batchSize() && total(m.stock) > 0) return "Salida subterr\xE1nea ocupada";
+      return total(m.stock) ? "Transportando bajo tierra" : "Entrada conectada \xB7 esperando material";
+    }
+    if (m.type === "undergroundOut" && !total(m.stock)) return "Salida subterr\xE1nea \xB7 esperando material";
     if ((m.type === "belt" || m.type === "splitter") && !total(m.stock)) return "Esperando material";
     if (m.type === "furnace") {
       if (total(m.output) >= this.outputLimit(m)) return "Salida llena";
@@ -766,7 +831,7 @@ var World = class {
           m.progress = 0;
         }
       } else if (m.type === "assembler") {
-        if (!this.canWork(m)) continue;
+        if (!this.canWork(m) || m.recipe === "none") continue;
         const recipe = RECIPES[m.recipe];
         m.progress += dt * (power.ratios.get(m) ?? 0) * (this.hasTech("industry") ? 1.5 : 1) * boost;
         if (m.progress >= recipe.seconds - 1e-8) {
@@ -801,7 +866,7 @@ var World = class {
         }
       } else if (m.type === "inserter") {
         if (this.canWork(m)) m.progress = Math.min(0.8, m.progress + dt * (power.ratios.get(m) ?? 0) * boost);
-      } else if (m.type === "belt" || m.type === "splitter") m.progress = total(m.stock) > 0 ? Math.min(this.beltDuration(), m.progress + dt) : 0;
+      } else if (["belt", "splitter", "undergroundIn", "undergroundOut"].includes(m.type)) m.progress = total(m.stock) > 0 ? Math.min(this.beltDuration(), m.progress + dt) : 0;
     }
     const locations = new Map(this.state.machines.flatMap((m) => Array.from({ length: machineSize(m) ** 2 }, (_, i) => [`${m.x + i % machineSize(m)},${m.y + Math.floor(i / machineSize(m))}`, m])));
     const moves = [];
@@ -811,15 +876,16 @@ var World = class {
       if (m.type === "inserter") {
         if (m.progress < 0.8 - 1e-8 || !(power.ratios.get(m) ?? 0)) continue;
         const { from, to } = this.inserterEnds(m);
-        if (!from || !to || from === to || from.type === "inserter" || to.type === "inserter") continue;
+        if (!from || !to || from === to || from.type === "inserter" || to.type === "inserter" || to.type === "undergroundOut") continue;
+        if (to.type === "undergroundIn" && (m.x !== to.x - DIRECTIONS[to.dir].x || m.y !== to.y - DIRECTIONS[to.dir].y)) continue;
         if (["belt", "splitter"].includes(to.type) && to.x + DIRECTIONS[to.dir].x === m.x && to.y + DIRECTIONS[to.dir].y === m.y) continue;
         const reserved = reservations.get(to) ?? inventory(), sent2 = outgoing.get(from) ?? inventory(), source2 = this.transferStock(from);
         const item2 = ITEMS.find((i) => {
-          const used2 = ["belt", "splitter", "chest"].includes(to.type) ? total(to.stock) + total(reserved) : to.stock[i] + reserved[i];
+          const used2 = ["belt", "splitter", "chest", "undergroundIn", "undergroundOut"].includes(to.type) ? total(to.stock) + total(reserved) : to.stock[i] + reserved[i];
           return source2[i] > sent2[i] && this.inputLimit(to, i) > used2;
         });
         if (!item2) continue;
-        const used = ["belt", "splitter", "chest"].includes(to.type) ? total(to.stock) + total(reserved) : to.stock[item2] + reserved[item2];
+        const used = ["belt", "splitter", "chest", "undergroundIn", "undergroundOut"].includes(to.type) ? total(to.stock) + total(reserved) : to.stock[item2] + reserved[item2];
         const amount = Math.min(batch, source2[item2] - sent2[item2], this.inputLimit(to, item2) - used);
         reserved[item2] += amount;
         sent2[item2] += amount;
@@ -828,17 +894,31 @@ var World = class {
         moves.push({ from, to, item: item2, amount, via: m });
         continue;
       }
-      if (["pole", "generator", "lab", "launchpad"].includes(m.type) || m.type === "chest" && !m.exporting || (m.type === "belt" || m.type === "splitter") && m.progress < this.beltDuration() - 1e-8) continue;
+      if (["pole", "generator", "lab", "launchpad"].includes(m.type) || m.type === "chest" && !m.exporting || ["belt", "splitter", "undergroundIn", "undergroundOut"].includes(m.type) && m.progress < this.beltDuration() - 1e-8) continue;
       const source = this.transferStock(m), sent = outgoing.get(m) ?? inventory();
       const item = ITEMS.find((i) => source[i] > sent[i]);
       if (!item) continue;
+      if (m.type === "undergroundIn") {
+        const to = this.undergroundExit(m);
+        if (!to) continue;
+        const reserved = reservations.get(to) ?? inventory(), used = total(to.stock) + total(reserved), cap = this.inputLimit(to, item);
+        if (used >= cap) continue;
+        const amount = Math.min(batch, source[item] - sent[item], cap - used);
+        reserved[item] += amount;
+        sent[item] += amount;
+        reservations.set(to, reserved);
+        outgoing.set(m, sent);
+        moves.push({ from: m, to, item, amount });
+        continue;
+      }
       const exits = m.type === "splitter" ? [(m.dir + m.branch) % 4, (m.dir + 1 - m.branch) % 4] : [m.dir];
       for (const dir2 of exits) {
         const d = DIRECTIONS[dir2], to = locations.get(`${m.x + d.x},${m.y + d.y}`);
-        if (!to) continue;
-        if ((to.type === "belt" || to.type === "splitter") && to.x + DIRECTIONS[to.dir].x === m.x && to.y + DIRECTIONS[to.dir].y === m.y) continue;
+        if (!to || to.type === "undergroundOut") continue;
+        if (to.type === "undergroundIn" && (m.x !== to.x - DIRECTIONS[to.dir].x || m.y !== to.y - DIRECTIONS[to.dir].y)) continue;
+        if (["belt", "splitter", "undergroundIn"].includes(to.type) && to.x + DIRECTIONS[to.dir].x === m.x && to.y + DIRECTIONS[to.dir].y === m.y) continue;
         const reserved = reservations.get(to) ?? inventory(), cap = this.inputLimit(to, item);
-        const used = ["belt", "splitter", "chest"].includes(to.type) ? total(to.stock) + total(reserved) : to.stock[item] + reserved[item];
+        const used = ["belt", "splitter", "chest", "undergroundIn", "undergroundOut"].includes(to.type) ? total(to.stock) + total(reserved) : to.stock[item] + reserved[item];
         if (cap <= 0 || used >= cap) continue;
         const amount = Math.min(batch, source[item] - sent[item], cap - used);
         reserved[item] += amount;
@@ -850,18 +930,19 @@ var World = class {
       }
     }
     for (const { from, to, item, amount, via } of moves) {
-      (["belt", "splitter", "chest"].includes(from.type) ? from.stock : from.output)[item] -= amount;
+      (["belt", "splitter", "chest", "undergroundIn", "undergroundOut"].includes(from.type) ? from.stock : from.output)[item] -= amount;
       to.stock[item] += amount;
       if (via) {
         via.progress = 0;
         via.produced += amount;
       }
-      if (from.type === "belt" || from.type === "splitter") from.progress = 0;
+      if (["belt", "splitter", "undergroundIn", "undergroundOut"].includes(from.type)) from.progress = 0;
       if (from.type === "splitter") from.branch = from.branch === 0 ? 1 : 0;
-      if (to.type === "belt" || to.type === "splitter") {
+      if (["belt", "splitter", "undergroundIn", "undergroundOut"].includes(to.type)) {
         const origin = via ?? from;
         to.progress = 0;
-        to.entry = DIRECTIONS.findIndex((d) => to.x + d.x === origin.x && to.y + d.y === origin.y);
+        const side = DIRECTIONS.findIndex((d) => to.x + d.x === origin.x && to.y + d.y === origin.y);
+        to.entry = side < 0 ? (to.dir + 2) % 4 : side;
       }
       if (to.type === "chest" && (item === "ironPlate" || item === "copperPlate")) this.state.delivered += amount;
     }
@@ -1051,6 +1132,10 @@ function machineDiagnostics(w2, m, power = w2.power()) {
     if (m.type === "furnace") add("Entrada", m.stock.iron + m.stock.copper === 0, m.stock.iron + m.stock.copper === 0 ? "Falta mena de hierro o cobre." : "Hay mineral para fundir.");
     add("Energ\xEDa", m.stock.coal === 0 && m.fuel <= 1e-8, m.stock.coal === 0 && m.fuel <= 1e-8 ? "Falta carb\xF3n. Cargalo a mano, por cinta o con un brazo." : `${m.stock.coal} carb\xF3n almacenado \xB7 combustible encendido ${m.fuel.toFixed(1)} s.`);
   } else if (m.type === "assembler") {
+    if (m.recipe === "none") {
+      add("Configuraci\xF3n", false, "Eleg\xED una receta para comenzar la producci\xF3n.");
+      return result;
+    }
     const missing = Object.entries(RECIPES[m.recipe].input).filter(([i, n]) => m.stock[i] < n);
     add("Entrada", missing.length > 0, missing.length ? "Faltan " + missing.map(([i, n]) => `${ITEM_NAMES[i]} ${m.stock[i]}/${n}`).join(" \xB7 ") + "." : "Ingredientes disponibles para la receta.");
     if (!w2.recipeUnlocked(m.recipe)) add("Configuraci\xF3n", true, "La receta requiere una tecnolog\xEDa pendiente.");
@@ -1092,7 +1177,7 @@ function movePlayer(world2, dx, dy, dt) {
   const p = world2.state.player;
   dx = dx / length * 3.5 * dt;
   dy = dy / length * 3.5 * dt;
-  const blocked = (x, y) => x < 0.28 || y < 0.28 || x > SIZE - 0.28 || y > SIZE - 0.28 || world2.wreckBlocksPlayer(x, y) || world2.state.machines.some((m) => !["belt", "splitter", "pole"].includes(m.type) && overlapsPlayer(m, x, y));
+  const blocked = (x, y) => x < 0.28 || y < 0.28 || x > SIZE - 0.28 || y > SIZE - 0.28 || world2.wreckBlocksPlayer(x, y) || world2.state.machines.some((m) => !["belt", "splitter", "pole", "undergroundIn", "undergroundOut"].includes(m.type) && overlapsPlayer(m, x, y));
   const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 0.15));
   for (let i = 0; i < steps; i++) {
     if (!blocked(p.x + dx / steps, p.y)) p.x += dx / steps;
@@ -1276,15 +1361,24 @@ function machineSprite(c, m, world2, ghost = false, power) {
     arrow(c, 16 + DIRECTIONS[m.dir].x * 14, 16 + DIRECTIONS[m.dir].y * 14, m.dir, "#a4ffe4", 3);
     return;
   }
-  if (m.type === "belt" || m.type === "splitter") {
+  if (["belt", "splitter", "undergroundIn", "undergroundOut"].includes(m.type)) {
     const carried = ITEMS.find((i) => m.stock[i] > 0), connected = world2.beltInputs(m);
-    const inputs = connected.length ? connected : [(m.dir + 2) % 4];
+    const inputs = m.type === "undergroundIn" || m.type === "undergroundOut" ? [(m.dir + 2) % 4] : connected.length ? connected : [(m.dir + 2) % 4];
     const exits = m.type === "splitter" ? [m.dir, (m.dir + 1) % 4] : [m.dir];
     const paths2 = inputs.flatMap((entry) => exits.map((dir2) => ({ entry, dir: dir2 })));
     c.save();
     c.beginPath();
     c.rect(0, 0, 32, 32);
     c.clip();
+    if (m.type === "undergroundIn" || m.type === "undergroundOut") {
+      c.translate(16, 16);
+      c.rotate(m.dir * Math.PI / 2);
+      c.beginPath();
+      c.rect(m.type === "undergroundIn" ? -16 : 0, -16, 16, 32);
+      c.clip();
+      c.rotate(-m.dir * Math.PI / 2);
+      c.translate(-16, -16);
+    }
     const path = (entry, dir2) => {
       const a = conveyorPoint(dir2, entry, 0), b = conveyorPoint(dir2, entry, 1);
       c.beginPath();
@@ -1293,7 +1387,7 @@ function machineSprite(c, m, world2, ghost = false, power) {
     };
     c.lineCap = "butt";
     c.lineJoin = "round";
-    for (const [width2, color] of [[24, INK], [20, "#e7bb52"], [14, "#253149"]]) {
+    for (const [width2, color] of [[26, INK], [22, "#f0bb50"], [16, "#253149"]]) {
       c.lineWidth = width2;
       c.strokeStyle = color;
       for (const p of paths2) {
@@ -1317,7 +1411,8 @@ function machineSprite(c, m, world2, ghost = false, power) {
     }
     c.restore();
     if (carried) {
-      const point = conveyorPoint(m.dir, m.entry, m.progress / world2.beltDuration());
+      const t = m.progress / world2.beltDuration(), visible = m.type === "undergroundIn" ? t * 0.5 : m.type === "undergroundOut" ? 0.5 + t * 0.5 : t;
+      const point = conveyorPoint(m.dir, m.entry, visible);
       drawItem(c, carried, point.x, point.y, 4.5);
       if (total(m.stock) > 1) {
         c.font = "bold 6px monospace";
@@ -1332,6 +1427,19 @@ function machineSprite(c, m, world2, ghost = false, power) {
     if (m.type === "splitter") {
       box(c, 12, 12, 8, 8, "#54ddba", 1.4);
       arrow(c, 16, 16, m.dir, "#fff3a1", 2.5);
+    }
+    if (m.type === "undergroundIn" || m.type === "undergroundOut") {
+      c.save();
+      c.translate(16, 16);
+      c.rotate(m.dir * Math.PI / 2);
+      box(c, -5, -12, 10, 24, "#4d6778", 2);
+      box(c, -3, -8, 6, 16, "#151d2c", 1);
+      arrow(c, 0, 0, 0, m.type === "undergroundIn" ? "#ffd06c" : "#8ff5d3", 3);
+      c.fillStyle = m.type === "undergroundIn" ? "#ffd06c" : "#8ff5d3";
+      c.font = "bold 6px sans-serif";
+      c.textAlign = "center";
+      c.fillText(m.type === "undergroundIn" ? "ENT" : "SAL", 0, -12);
+      c.restore();
     }
     return;
   }
@@ -1432,8 +1540,10 @@ function machineSprite(c, m, world2, ghost = false, power) {
     c.rotate(work ? time * 2 : 0);
     drawItem(c, "gear", 0, 0, 8);
     c.restore();
-    const output = Object.keys(RECIPES[m.recipe].output)[0];
-    drawItem(c, output, 25, 8, 3.3);
+    if (m.recipe !== "none") {
+      const output = Object.keys(RECIPES[m.recipe].output)[0];
+      drawItem(c, output, 25, 8, 3.3);
+    }
     box(c, 6, 26, 20, 3, "#8badd6", 1);
   } else if (m.type === "lab") {
     box(c, 2, 24, 28, 6, "#b062b1", 1.6);
@@ -1523,7 +1633,7 @@ function machineSprite(c, m, world2, ghost = false, power) {
     if (m.progress > 0) {
       box(c, 5, 31, 22, 2, INK, 0);
       c.fillStyle = m.type === "furnace" ? "#ffad66" : "#75f5d9";
-      c.fillRect(5, 31, 22 * m.progress / (m.type === "furnace" || m.type === "lab" ? 2 : m.type === "assembler" ? RECIPES[m.recipe].seconds : 1), 2);
+      c.fillRect(5, 31, 22 * m.progress / (m.type === "furnace" || m.type === "lab" ? 2 : m.type === "assembler" && m.recipe !== "none" ? RECIPES[m.recipe].seconds : 1), 2);
     }
   }
 }
@@ -1547,6 +1657,11 @@ function astronaut(c, time, walking) {
   box(c, 6, 1, 3, 6, "#ffbb68", 1.2);
   c.restore();
 }
+var lastPowerWorld = null;
+var lastPowerAt = 0;
+var lastPower = null;
+var lastPowerCount = -1;
+var lastDepletionScan = 0;
 function render(c, world2, v) {
   const { w: w2, h: h2, dpr: dpr2, zoom: zoom2, camera: camera2 } = v, unit = 32 * zoom2;
   c.setTransform(dpr2, 0, 0, dpr2, 0, 0);
@@ -1561,19 +1676,23 @@ function render(c, world2, v) {
     cachedPlanet = planetKey;
     groundChunks.clear();
     exhausted.clear();
+    lastDepletionScan = 0;
   }
-  for (const key of Object.keys(world2.state.depleted)) {
-    if (exhausted.has(key)) continue;
-    const [x, y] = key.split(",").map(Number);
-    if (world2.tile(x, y).amount > 0) continue;
-    const ground = groundChunks.get(`${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`);
-    if (ground) {
-      const gc = ground.getContext("2d");
-      gc.save();
-      gc.translate(x % CHUNK * 32, y % CHUNK * 32);
-      terrain(gc, world2, x, y);
-      gc.restore();
-      exhausted.add(key);
+  if (performance.now() - lastDepletionScan > 250) {
+    lastDepletionScan = performance.now();
+    for (const key of Object.keys(world2.state.depleted)) {
+      if (exhausted.has(key)) continue;
+      const [x, y] = key.split(",").map(Number);
+      if (world2.tile(x, y).amount > 0) continue;
+      const ground = groundChunks.get(`${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`);
+      if (ground) {
+        const gc = ground.getContext("2d");
+        gc.save();
+        gc.translate(x % CHUNK * 32, y % CHUNK * 32);
+        terrain(gc, world2, x, y);
+        gc.restore();
+        exhausted.add(key);
+      }
     }
   }
   for (let cy = Math.floor(y0 / CHUNK); cy < Math.ceil(y1 / CHUNK); cy++) for (let cx = Math.floor(x0 / CHUNK); cx < Math.ceil(x1 / CHUNK); cx++) {
@@ -1628,7 +1747,14 @@ function render(c, world2, v) {
     c.fillText(world2.canSalvage() ? "MANTEN\xC9 E \xB7 DESARMAR NAVE" : "NAVE ACCIDENTADA", 48, -4);
     c.restore();
   }
-  const power = world2.power();
+  const now = performance.now();
+  if (lastPowerWorld !== world2 || !lastPower || now - lastPowerAt > 150 || lastPowerCount !== world2.state.machines.length) {
+    lastPower = world2.power();
+    lastPowerWorld = world2;
+    lastPowerAt = now;
+    lastPowerCount = world2.state.machines.length;
+  }
+  const power = lastPower;
   if (v.showPower || v.building && ["pole", "generator"].includes(v.tool)) {
     for (const node of world2.state.machines.filter((m) => m.type === "pole" || m.type === "generator")) {
       c.fillStyle = "#74fff119";
@@ -1675,7 +1801,7 @@ function render(c, world2, v) {
     c.translate(ox + m.x * unit, oy + m.y * unit);
     c.scale(zoom2, zoom2);
     machineSprite(c, m, world2, false, power);
-    if (machineDiagnostics(world2, m, power).some((issue) => issue.warning)) {
+    if ((m.type === "miner" || DEMAND[m.type]) && machineDiagnostics(world2, m, power).some((issue) => issue.warning)) {
       box(c, 24, -4, 9, 9, "#fa6b89", 1.4);
       c.font = "bold 7px monospace";
       c.textAlign = "center";
@@ -2070,7 +2196,6 @@ function setupTutorialUI(ctx2) {
     const active = ctx2.active();
     panel.hidden = !active;
     target2.hidden = !active || index === TUTORIAL_STEPS.length;
-    el3("tutorial-open").textContent = active ? "Tutorial en curso" : "Aprender a construir";
     if (!active) {
       clearHighlight();
       lastKey = "";
@@ -2121,11 +2246,14 @@ function setupTutorialUI(ctx2) {
 // === MENÚ PRINCIPAL: inicio, carga y opciones. ===
 // Fuente: cambios/src/ui/main-menu.ts
 var el4 = (id) => document.getElementById(id);
+function randomSeed() {
+  return Math.random().toString(36).slice(2, 10).toUpperCase().padEnd(8, "0");
+}
 function setupMainMenu(ctx2) {
   const dialog = el4("main-menu");
   let busy = false;
   function page(name) {
-    for (const id of ["home", "new", "options", "controls"]) el4(`menu-${id}`).hidden = id !== name;
+    for (const id of ["home", "new", "options", "controls", "training"]) el4(`menu-${id}`).hidden = id !== name;
     el4("menu-notice").textContent = "";
   }
   function update() {
@@ -2153,12 +2281,22 @@ function setupMainMenu(ctx2) {
     if (busy || !ctx2.canResume()) e.preventDefault();
   };
   dialog.onclose = ctx2.closed;
+  el4("menu-random-seed").onclick = () => {
+    const input = el4("menu-seed");
+    let next;
+    do {
+      next = randomSeed();
+    } while (next === input.value);
+    input.value = next;
+  };
   el4("menu-resume").onclick = close;
   el4("menu-new-button").onclick = () => {
     page("new");
-    el4("menu-seed").focus();
+    const seed = el4("menu-seed");
+    seed.value = randomSeed();
+    seed.focus();
   };
-  for (const id of ["options", "controls"]) el4(`menu-${id}-button`).onclick = () => {
+  for (const id of ["options", "controls", "training"]) el4(`menu-${id}-button`).onclick = () => {
     update();
     page(id);
   };
@@ -2257,7 +2395,7 @@ try {
 }
 camera.x = world.state.player.x;
 camera.y = world.state.player.y;
-el5("seed").value = world.state.seed;
+el5("seed").value = randomSeed2();
 async function persist() {
   if (!hasSession) return false;
   if (realState) {
@@ -2330,7 +2468,13 @@ function hovered() {
   return t ? world.at(t.x, t.y) : void 0;
 }
 function showInspector() {
-  requestAnimationFrame(() => el5("inspector").scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  const dialog = el5("inspector");
+  if (!dialog.open && !document.querySelector("dialog[open]")) {
+    keys.clear();
+    dragLast = null;
+    el5("machine-feedback").textContent = "";
+    dialog.showModal();
+  }
 }
 function interactMachine() {
   const m = hovered() ?? selected ?? world.state.machines.filter((m2) => world.inReach(m2)).sort((a, b) => Math.hypot(a.x + 0.5 - world.state.player.x, a.y + 0.5 - world.state.player.y) - Math.hypot(b.x + 0.5 - world.state.player.x, b.y + 0.5 - world.state.player.y))[0];
@@ -2367,11 +2511,20 @@ function dismantle(m = hovered() ?? selected) {
   updateUI();
 }
 window.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "i" && !e.repeat && !e.target.closest("input,textarea,select") && (el5("inventory-dialog").open || !document.querySelector("dialog[open]"))) {
+    e.preventDefault();
+    toggleInventory();
+    return;
+  }
   if (e.target.closest("input,textarea,select,button,summary,dialog")) return;
   const key = e.key.toLowerCase();
+  if (e.altKey || e.ctrlKey || e.metaKey) {
+    keys.clear();
+    return;
+  }
   if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) e.preventDefault();
-  keys.add(key);
   if (e.repeat) return;
+  keys.add(key);
   if (world.state.flight && key !== " ") return;
   if (key === "e" && world.canSalvage()) setMode(false);
   if (key === "b") setMode(!building);
@@ -2387,7 +2540,7 @@ window.addEventListener("keydown", (e) => {
   if (key === "t") openResearch();
   if (key === "o") spaceUI.open();
   if (key === "0") selectTool("launchpad");
-  if (key === "i") selectTool("inserter");
+  if (key === "q") selectTool("inserter");
   const index = Number(key) - 1;
   if (index >= 0 && index < TYPES.length) selectTool(TYPES[index]);
 });
@@ -2395,6 +2548,14 @@ window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
 window.addEventListener("blur", () => {
   keys.clear();
   dragLast = null;
+  last = 0;
+  acc = 0;
+});
+window.addEventListener("focus", () => {
+  keys.clear();
+  last = 0;
+  acc = 0;
+  if (!document.querySelector("dialog[open]") && !document.activeElement?.closest("input,textarea,select")) canvas.focus({ preventScroll: true });
 });
 document.addEventListener("visibilitychange", () => {
   keys.clear();
@@ -2407,7 +2568,7 @@ function updateOreHint() {
   hint.hidden = !mouse || building && !m || !tile2?.resource && !wreck && !m || !!document.querySelector("dialog[open]");
   if (hint.hidden || !mouse || !tile2) return;
   const text = m ? `${MACHINE_NAMES[m.type]} \xB7 ${world.status(m)}
-` + machineDiagnostics(world, m).map((d) => `${d.warning ? "\u26A0" : "\u2022"} ${d.kind}: ${d.message}`).join("\n") : wreck ? "Nave accidentada \xB7 mantener E" : `${ITEM_NAMES[tile2.resource]}${tile2.amount === 0 ? " \xB7 agotada" : ""}`;
+` + machineDiagnostics(world, m).map((d) => `${d.warning ? "\u26A0" : "\u2022"} ${d.kind}: ${d.message}`).join("\n") : wreck ? "Nave accidentada \xB7 mantener E" : `${ITEM_NAMES[tile2.resource]} \xB7 ${tile2.amount === 0 ? "agotada" : `reserva en esta casilla: ${tile2.amount.toLocaleString("es-AR")} unidades`}`;
   if (hint.textContent !== text) hint.textContent = text;
   hint.style.setProperty("--ore-color", m ? "#ffcf83" : wreck ? "#ffcf83" : ITEM_COLORS[tile2.resource]);
   hint.style.left = `${Math.max(8, Math.min(w - hint.offsetWidth - 8, mouse.x + 16))}px`;
@@ -2484,7 +2645,27 @@ el5("mode").onclick = () => {
   setMode(!building);
   canvas.focus();
 };
-for (const type of TYPES) el5(`tool-${type}`).onclick = () => selectTool(type);
+function toggleInventory() {
+  const dialog = el5("inventory-dialog");
+  if (dialog.open) {
+    dialog.close();
+    return;
+  }
+  if (document.querySelector("dialog[open]")) return;
+  keys.clear();
+  dragLast = null;
+  updateUI();
+  dialog.showModal();
+}
+el5("inventory-open").onclick = toggleInventory;
+el5("inventory-close").onclick = () => el5("inventory-dialog").close();
+el5("inventory-dialog").onclose = () => canvas.focus();
+for (const type of TYPES) {
+  const button = el5(`tool-${type}`);
+  button.onclick = () => selectTool(type);
+  button.dataset.cost = `Costo: ${costText(type)}`;
+  button.setAttribute("aria-label", `${MACHINE_NAMES[type]}. Costo: ${costText(type)}`);
+}
 el5("rotate").onclick = () => {
   rotate();
   canvas.focus();
@@ -2549,16 +2730,25 @@ async function toggleDemo(kind) {
     menuUI.open();
   }
 }
-el5("demo").onclick = () => void toggleDemo("industry");
-el5("space-demo").onclick = () => void toggleDemo("space");
+el5("demo").onclick = () => {
+  menuUI.close();
+  void toggleDemo("industry");
+};
+el5("space-demo").onclick = () => {
+  menuUI.close();
+  void toggleDemo("space");
+};
+el5("demo-return").onclick = () => {
+  if (demoKind === "industry" || demoKind === "space") void toggleDemo(demoKind);
+};
 function machineAction(action) {
   if (paused || world.state.flight) {
     toast("Esper\xE1 el lanzamiento o reanud\xE1 la simulaci\xF3n para interactuar.");
     return;
   }
-  toast(action() ?? "Materiales transferidos.");
+  const result = action();
+  el5("machine-feedback").textContent = result ?? "Acci\xF3n realizada.";
   updateUI();
-  canvas.focus();
 }
 el5("collect").onclick = () => {
   if (selected) machineAction(() => {
@@ -2571,7 +2761,7 @@ el5("recover-inputs").onclick = () => {
   if (selected) machineAction(() => world.collectInputs(selected));
 };
 el5("input-item").innerHTML = ITEMS.map((i) => `<option value="${i}">${ITEM_NAMES[i]}</option>`).join("");
-el5("recipe-select").innerHTML = Object.entries(RECIPES).map(([id, r]) => `<option value="${id}">${r.name}${r.tech ? " \xB7 " + TECHS[r.tech].name : ""}</option>`).join("");
+el5("recipe-select").innerHTML = '<option value="none" disabled>Seleccion\xE1 un producto\u2026</option>' + Object.entries(RECIPES).map(([id, r]) => `<option value="${id}">${r.name}${r.tech ? " \xB7 " + TECHS[r.tech].name : ""}</option>`).join("");
 el5("load-material").onclick = () => {
   if (selected) machineAction(() => world.loadMachine(selected, el5("input-item").value));
 };
@@ -2594,14 +2784,14 @@ el5("machine-rotate").onclick = () => {
     else toast("Acercate para girar la m\xE1quina.");
     updateUI();
   }
-  canvas.focus();
 };
 el5("remove").onclick = () => {
   dismantle(selected);
-  canvas.focus();
 };
-el5("close-inspector").onclick = () => {
+el5("close-inspector").onclick = () => el5("inspector").close();
+el5("inspector").onclose = () => {
   selected = null;
+  inspected = null;
   updateUI();
   canvas.focus();
 };
@@ -2627,9 +2817,16 @@ for (const id of TECH_IDS) el5(`research-${id}`).onclick = () => {
 };
 var confirmation = el5("confirmation");
 var pendingSeed = "";
+function randomSeed2() {
+  return Math.random().toString(36).slice(2, 10).toUpperCase().padEnd(8, "0");
+}
+el5("random-seed").onclick = () => {
+  el5("seed").value = randomSeed2();
+};
 function requestNewGame(seed) {
-  pendingSeed = seed.trim();
-  if (!pendingSeed || pendingSeed.length > 48) return;
+  const chosen = seed.trim();
+  pendingSeed = chosen.startsWith("m4:") ? chosen : `m4:${chosen}`;
+  if (!chosen || pendingSeed.length > 48) return;
   keys.clear();
   el5("new-game-error").textContent = "";
   if (storedSave || hasSession) confirmation.showModal();
@@ -2714,7 +2911,6 @@ var tutorialUI = setupTutorialUI({
       selected = world.at(x, y) ?? null;
       setMode(false);
       showInspector();
-      canvas.focus();
     }
   },
   exit: () => void toggleDemo("tutorial"),
@@ -2730,20 +2926,13 @@ var tutorialUI = setupTutorialUI({
   },
   research: openResearch
 });
-el5("tutorial-open").onclick = () => {
-  if (demoKind === "tutorial") {
-    canvas.focus();
-    return;
-  }
-  void toggleDemo("tutorial");
-};
 function activateGame(state) {
   world = new World(state);
   hasSession = true;
   realState = null;
   demoKind = null;
   returnToMenuAfterDemo = false;
-  el5("seed").value = state.originSeed;
+  el5("seed").value = randomSeed2();
   autosave = 0;
   last = 0;
   if (paused) pause();
@@ -2859,7 +3048,7 @@ function updateUI() {
   }
   el5("hover").textContent = t && world.wreckAt(t.x, t.y) ? "Nave accidentada \xB7 acercate y manten\xE9 E para recuperar materiales" : m ? `${MACHINE_NAMES[m.type]} \xB7 ${world.status(m, power)} \xB7 ${DIRECTIONS[m.dir].label}` : t && tile2?.resource ? `${ITEM_NAMES[tile2.resource]} \xB7 ${tile2.amount} restantes \xB7 (${t.x}, ${t.y})` : "Explor\xE1 los yacimientos \xB7 clic en una m\xE1quina para inspeccionar";
   updateOreHint();
-  el5("inspector").hidden = !selected;
+  if (!selected && el5("inspector").open) el5("inspector").close();
   if (selected) {
     el5("machine-title").textContent = MACHINE_NAMES[selected.type];
     el5("machine-status").textContent = world.status(selected, power) + (world.inReach(selected) ? "" : " \xB7 fuera de alcance");
@@ -2869,17 +3058,17 @@ function updateUI() {
     el5("machine-location").textContent = `(${selected.x}, ${selected.y}) \xB7 salida ${DIRECTIONS[selected.dir].label}`;
     el5("machine-stock").innerHTML = stockText(selected.stock);
     el5("machine-output").innerHTML = stockText(selected.output);
-    el5("machine-production").textContent = selected.type === "inserter" ? `${selected.produced} unidades transferidas \xB7 toma detr\xE1s y entrega delante \xB7 2 kW \xB7 ciclo ${Math.round(selected.progress / 0.8 * 100)} %` : selected.type === "furnace" ? `${selected.produced} placas \xB7 combustible ${selected.fuel.toFixed(1)} s \xB7 proceso ${Math.round(selected.progress / 2 * 100)} %` : selected.type === "miner" ? `${selected.produced} extra\xEDdos \xB7 reserva ${world.tile(selected.x, selected.y).amount}` : selected.type === "generator" ? `60 kW base \xB7 combustible ${selected.fuel.toFixed(1)} s` : selected.type === "assembler" ? `${selected.produced} ciclos \xB7 proceso ${Math.round(selected.progress / RECIPES[selected.recipe].seconds * 100)} %` : selected.type === "lab" ? `${selected.produced} paquetes procesados \xB7 ${Math.round(selected.progress / 2 * 100)} %` : `${total(selected.stock)} unidades almacenadas`;
+    el5("machine-production").textContent = selected.type === "inserter" ? `${selected.produced} unidades transferidas \xB7 toma detr\xE1s y entrega delante \xB7 2 kW \xB7 ciclo ${Math.round(selected.progress / 0.8 * 100)} %` : selected.type === "furnace" ? `${selected.produced} placas \xB7 combustible ${selected.fuel.toFixed(1)} s \xB7 proceso ${Math.round(selected.progress / 2 * 100)} %` : selected.type === "miner" ? `${selected.produced} extra\xEDdos \xB7 reserva ${world.tile(selected.x, selected.y).amount}` : selected.type === "generator" ? `60 kW base \xB7 combustible ${selected.fuel.toFixed(1)} s` : selected.type === "assembler" ? selected.recipe === "none" ? "Esperando selecci\xF3n de receta" : `${selected.produced} ciclos \xB7 proceso ${Math.round(selected.progress / RECIPES[selected.recipe].seconds * 100)} %` : selected.type === "lab" ? `${selected.produced} paquetes procesados \xB7 ${Math.round(selected.progress / 2 * 100)} %` : `${total(selected.stock)} unidades almacenadas`;
     el5("furnace-load").hidden = selected.type !== "furnace";
     el5("collect").textContent = selected.type === "chest" ? "Recoger del cofre" : "Recoger salida";
     el5("platform-open").hidden = selected.type !== "launchpad";
     el5("assembler-recipe").hidden = selected.type !== "assembler";
-    el5("recipe-select").value = selected.recipe;
+    if (document.activeElement !== el5("recipe-select")) el5("recipe-select").value = selected.recipe;
     for (const option of Array.from(el5("recipe-select").options)) {
-      option.disabled = !world.recipeUnlocked(option.value);
+      option.disabled = option.value === "none" || !world.recipeUnlocked(option.value);
     }
-    const recipe = RECIPES[selected.recipe];
-    el5("recipe-description").innerHTML = Object.entries(recipe.input).map(([i, n]) => `<span class="item-label">${itemIcon(i)}${n} ${ITEM_NAMES[i]}</span>`).join(" + ") + " \u2192 " + Object.entries(recipe.output).map(([i, n]) => `<span class="item-label">${itemIcon(i)}${n} ${ITEM_NAMES[i]}</span>`).join(" + ") + ` \xB7 ${recipe.seconds} s`;
+    const recipe = selected.recipe === "none" ? null : RECIPES[selected.recipe];
+    el5("recipe-description").innerHTML = recipe ? Object.entries(recipe.input).map(([i, n]) => `<span class="item-label">${itemIcon(i)}${n} ${ITEM_NAMES[i]}</span>`).join(" + ") + " \u2192 " + Object.entries(recipe.output).map(([i, n]) => `<span class="item-label">${itemIcon(i)}${n} ${ITEM_NAMES[i]}</span>`).join(" + ") + ` \xB7 ${recipe.seconds} s` : "Eleg\xED qu\xE9 producto quer\xE9s fabricar.";
     el5("chest-export").hidden = selected.type !== "chest";
     el5("export-checkbox").checked = selected.exporting;
     el5("machine-load").hidden = !["generator", "assembler", "lab", "chest", "launchpad"].includes(selected.type);

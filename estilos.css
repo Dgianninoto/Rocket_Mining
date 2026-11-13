@@ -2821,3 +2821,16 @@ button:disabled {
   min-height: 1.2em;
   font-size: 12px;
 }
+.rare-guide {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #80759c;
+  border-radius: 7px;
+  background: #23253c;
+  color: #e4ddff;
+  font-size: 11px;
+}
+.rare-guide p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}

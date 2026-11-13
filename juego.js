@@ -119,7 +119,7 @@ function migrateState(value) {
 
 // === SIMULACIÓN: recursos, máquinas, recetas, energía y progreso. ===
 // Fuente: cambios/src/simulation/sim.ts
-var SIZE = 96;
+var SIZE = 125;
 var CHUNK = 32;
 var RESOURCES = ["iron", "copper", "coal", "stone", "titanium", "crystal"];
 var NAMES = { iron: "Hierro", copper: "Cobre", coal: "Carb\xF3n", stone: "Piedra", titanium: "Titanio", crystal: "Cristal" };
@@ -184,13 +184,14 @@ function seedNumber(seed) {
   return n;
 }
 function createState(seed = "aurora-01") {
-  return { version: 5, seed, player: { x: 48.5, y: 48.5 }, inventory: inventory(), machines: [], depleted: {}, mined: 0, time: 0, smelted: 0, delivered: 0, kitClaimed: false, industrialKit: false, research: null, unlocked: [], techProgress: Object.fromEntries(TECH_IDS.map((id) => [id, 0])), production: inventory(), originSeed: seed, planet: 0, highestPlanet: 0, colonies: {}, flight: null, launches: 0, credits: 0, orbitalRank: 0, shipments: [], shipmentId: 0, deliveredCargo: 0 };
+  return { version: 5, seed, player: seed.startsWith("m5:") ? { x: 62.5, y: 62.5 } : { x: 48.5, y: 48.5 }, inventory: inventory(), machines: [], depleted: {}, mined: 0, time: 0, smelted: 0, delivered: 0, kitClaimed: false, industrialKit: false, research: null, unlocked: [], techProgress: Object.fromEntries(TECH_IDS.map((id) => [id, 0])), production: inventory(), originSeed: seed, planet: 0, highestPlanet: 0, colonies: {}, flight: null, launches: 0, credits: 0, orbitalRank: 0, shipments: [], shipmentId: 0, deliveredCargo: 0 };
 }
 var World = class {
   chunks = /* @__PURE__ */ new Map();
   machineIndex = /* @__PURE__ */ new Map();
   indexedMachines = null;
   indexedLength = -1;
+  homeRareCache = null;
   seed;
   state;
   constructor(state) {
@@ -203,7 +204,8 @@ var World = class {
     if (s.salvage || s.kitClaimed && s.industrialKit) return;
     const colony = s.planet === 0 ? s : s.colonies[0];
     if (!colony) return;
-    const cells = Array.from({ length: (SIZE - 2) * (SIZE - 1) }, (_, i) => ({ x: i % (SIZE - 2), y: Math.floor(i / (SIZE - 2)) })).sort((a, b) => Math.hypot(a.x - 47, a.y - 46) - Math.hypot(b.x - 47, b.y - 46));
+    const center = s.originSeed.startsWith("m5:") ? 62 : 48;
+    const cells = Array.from({ length: (SIZE - 2) * (SIZE - 1) }, (_, i) => ({ x: i % (SIZE - 2), y: Math.floor(i / (SIZE - 2)) })).sort((a, b) => Math.hypot(a.x - (center - 1), a.y - (center - 2)) - Math.hypot(b.x - (center - 1), b.y - (center - 2)));
     const p = cells.find((p2) => !(colony.player.x > p2.x - 0.27 && colony.player.x < p2.x + 3.27 && colony.player.y > p2.y - 0.27 && colony.player.y < p2.y + 2.27) && !colony.machines.some((m) => p2.x < m.x + machineSize(m) && p2.x + 3 > m.x && p2.y < m.y + machineSize(m) && p2.y + 2 > m.y));
     if (p) s.salvage = { ...p, starter: 0, industrial: 0 };
   }
@@ -310,7 +312,7 @@ var World = class {
     const saved = this.state.colonies[index];
     const landing = inventory();
     Object.assign(landing, { iron: 30, copper: 20, stone: 40, coal: 20, ironPlate: 12, copperPlate: 12 });
-    const colony = saved ?? { seed: index === 0 ? this.state.originSeed : `${this.state.originSeed}/sector-${index}`, player: { x: 48.5, y: 48.5 }, inventory: landing, machines: [], depleted: {} };
+    const colony = saved ?? { seed: index === 0 ? this.state.originSeed : `${this.state.originSeed}/sector-${index}`, player: this.state.originSeed.startsWith("m5:") ? { x: 62.5, y: 62.5 } : { x: 48.5, y: 48.5 }, inventory: landing, machines: [], depleted: {} };
     this.state.planet = index;
     this.state.seed = colony.seed;
     this.state.player = colony.player;
@@ -365,17 +367,53 @@ var World = class {
     const t = chunk[y % CHUNK * CHUNK + x % CHUNK];
     return { resource: t.resource, amount: Math.max(0, t.amount - (this.state.depleted[`${x},${y}`] ?? 0)) };
   }
+  // Yacimientos en terreno vacío: no se reemplaza ninguna mena anterior.
+  homeRareDeposits() {
+    if (this.homeRareCache?.seed === this.state.originSeed) return this.homeRareCache.deposits;
+    const candidates = [];
+    const modern = this.state.originSeed.startsWith("m5:"), bound = modern ? SIZE : 96, center = modern ? 62 : 48;
+    for (let y = 8; y < bound - 8; y += 5) for (let x = 8; x < bound - 8; x += 5) if (Math.hypot(x - center, y - center) > 25) candidates.push({ x, y });
+    candidates.sort((a, b) => hash(a.x, a.y, this.seed + 917) - hash(b.x, b.y, this.seed + 917));
+    const deposits = [];
+    for (const p of candidates) {
+      if (deposits.some((d) => Math.hypot(d.x - p.x, d.y - p.y) < 15)) continue;
+      let clear = true;
+      for (let dy = -2; dy <= 2 && clear; dy++) for (let dx = -2; dx <= 2; dx++) if (this.generateBase(p.x + dx, p.y + dy).resource) {
+        clear = false;
+        break;
+      }
+      if (clear) deposits.push({ ...p, resource: deposits.length === 0 ? "titanium" : "crystal" });
+      if (deposits.length === 2) break;
+    }
+    this.homeRareCache = { seed: this.state.originSeed, deposits };
+    return deposits;
+  }
   generate(x, y) {
     const p = this.planet(), t = this.generateBase(x, y);
+    if (this.state.planet === 0 && !t.resource) {
+      const home = this.homeRareDeposits().find((d) => Math.abs(x - d.x) <= 2 && Math.abs(y - d.y) <= 2);
+      if (home) return { resource: home.resource, amount: 350 + Math.floor(hash(x, y, this.seed) * 150) };
+    }
     let rare = null;
     if (p.rare) {
-      if (p.rare !== "crystal" && Math.hypot(x - 45, y - 44) < 1.8) rare = "titanium";
-      if (p.rare !== "titanium" && Math.hypot(x - 54, y - 52) < 1.8) rare = "crystal";
+      const shift = this.state.originSeed.startsWith("m5:") ? 14 : 0;
+      if (p.rare !== "crystal" && Math.hypot(x - 45 - shift, y - 44 - shift) < 1.8) rare = "titanium";
+      if (p.rare !== "titanium" && Math.hypot(x - 54 - shift, y - 52 - shift) < 1.8) rare = "crystal";
       if (t.resource && hash(Math.floor(x / 10), Math.floor(y / 10), this.seed + 77) > 0.67) rare = p.rare === "both" ? hash(x, y, this.seed) > 0.5 ? "titanium" : "crystal" : p.rare;
     }
     return { resource: rare ?? t.resource, amount: Math.floor((rare ? 300 : t.amount) * p.richness) };
   }
   generateBase(x, y) {
+    if (this.state.originSeed.startsWith("m5:")) {
+      const starts2 = [{ x: 82, y: 62, r: "iron" }, { x: 62, y: 82, r: "stone" }, { x: 39, y: 57, r: "copper" }, { x: 67, y: 39, r: "coal" }];
+      for (const p of starts2) if (Math.hypot(x - p.x, y - p.y) < 4.5) return { resource: p.r, amount: 350 + Math.floor(hash(x, y, this.seed) * 300) };
+      if (Math.hypot(x - 62, y - 62) < 28) return { resource: null, amount: 0 };
+      for (let gy = Math.floor(y / 24) - 1; gy <= Math.floor(y / 24) + 1; gy++) for (let gx = Math.floor(x / 24) - 1; gx <= Math.floor(x / 24) + 1; gx++) {
+        const h2 = hash(gx, gy, this.seed), px = gx * 24 + 10 + hash(gx + 300, gy, this.seed) * 4, py = gy * 24 + 10 + hash(gx, gy + 300, this.seed) * 4;
+        if (h2 > 0.5 && Math.hypot(x - px, y - py) < 5.2 + h2 * 0.8) return { resource: RESOURCES[Math.floor(hash(gx + 99, gy + 99, this.seed) * 4)], amount: 350 + Math.floor(h2 * 400) };
+      }
+      return { resource: null, amount: 0 };
+    }
     if (this.state.originSeed.startsWith("m4:")) {
       const starts2 = [{ x: 58, y: 48, r: "iron" }, { x: 43, y: 58, r: "stone" }, { x: 28, y: 44, r: "copper" }, { x: 51, y: 28, r: "coal" }];
       for (const p of starts2) if (Math.hypot(x - p.x, y - p.y) < 4.5) return { resource: p.r, amount: 350 + Math.floor(hash(x, y, this.seed) * 300) };
@@ -488,7 +526,7 @@ var World = class {
     if (previous?.type !== "belt" || !this.inReach(previous)) return "La cinta anterior est\xE1 fuera de alcance.";
     const existing = this.at(to.x, to.y);
     if (existing && (existing.type !== "belt" || !this.inReach(existing))) return "La casilla siguiente est\xE1 ocupada o fuera de alcance.";
-    const error = existing ? null : this.build(to.x, to.y, "belt", end);
+    const error = this.build(to.x, to.y, "belt", end);
     if (error) return error;
     previous.dir = DIRECTIONS.findIndex((d) => d.x === dx && d.y === dy);
     return null;
@@ -504,6 +542,8 @@ var World = class {
     const s = this.state, t = this.tile(x, y), size = machineSize({ type });
     if (s.flight) return "Esper\xE1 a que termine el lanzamiento.";
     if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x + size > SIZE || y + size > SIZE) return "Fuera del mapa: la base debe entrar completa.";
+    const existing = this.at(x, y);
+    if (type === "belt" && existing?.type === "belt") return this.inReach(existing) ? null : "Acercate: el alcance es de 4 casillas.";
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) if (this.wreckAt(x + dx, y + dy)) return "Desarm\xE1 primero la nave: acercate y manten\xE9 E.";
     else if (this.at(x + dx, y + dy)) return "La casilla est\xE1 ocupada.";
     if (type === "splitter" && !this.hasTech("logistics")) return "Investig\xE1 Log\xEDstica avanzada para desbloquear el divisor.";
@@ -519,6 +559,11 @@ var World = class {
   build(x, y, type = "miner", dir2 = 0) {
     const error = this.placement(x, y, type);
     if (error) return error;
+    const existing = this.at(x, y);
+    if (type === "belt" && existing?.type === "belt") {
+      existing.dir = dir2;
+      return null;
+    }
     for (const [i, n] of Object.entries(COSTS[type])) this.state.inventory[i] -= n;
     const built = machine(type, x, y, dir2);
     if (type === "assembler") built.recipe = "none";
@@ -1229,6 +1274,7 @@ async function save(state) {
 // === DIBUJO: mapa, terreno, máquinas, personaje y efectos. ===
 // Fuente: cambios/src/rendering/render.ts
 var INK = "#101326";
+var GROUND_CHUNK = 8;
 var cachedWorld = null;
 var cachedPlanet = "";
 var groundChunks = /* @__PURE__ */ new Map();
@@ -1535,14 +1581,19 @@ function machineSprite(c, m, world2, ghost = false, power) {
     box(c, 2, 5, 28, 24, "#3e68a4", 2.1);
     box(c, 4, 5, 24, 5, "#87baff", 1.4);
     box(c, 6, 11, 20, 14, "#223652", 1.6);
-    c.save();
-    c.translate(16, 18);
-    c.rotate(work ? time * 2 : 0);
-    drawItem(c, "gear", 0, 0, 8);
-    c.restore();
     if (m.recipe !== "none") {
       const output = Object.keys(RECIPES[m.recipe].output)[0];
-      drawItem(c, output, 25, 8, 3.3);
+      box(c, 8, 10, 16, 16, "#172b43", 1.2);
+      drawItem(c, output, 16, 18, 7);
+      if (work) {
+        c.fillStyle = "#8effcb";
+        c.fillRect(25, 12, 2, 3);
+      }
+    } else {
+      c.save();
+      c.translate(16, 18);
+      drawItem(c, "gear", 0, 0, 5);
+      c.restore();
     }
     box(c, 6, 26, 20, 3, "#8badd6", 1);
   } else if (m.type === "lab") {
@@ -1564,34 +1615,65 @@ function machineSprite(c, m, world2, ghost = false, power) {
       polygon(c, [[x, 57], [x + 4, 57], [x + 9, 62], [x + 5, 62]], "#ffd66b", INK, 0.7);
     }
     for (const x of [5, 59]) for (const y of [12, 24, 36, 48]) box(c, x - 2, y, 4, 5, "#86b3ce", 1);
-    box(c, 14, 42, 36, 10, "#141d30", 1.5);
-    box(c, 53, -36, 6, 87, "#788ca6", 1.5);
-    for (let y = -32; y < 47; y += 10) {
+    box(c, 8, 42, 48, 10, "#141d30", 1.5);
+    box(c, 62, -74, 7, 125, "#788ca6", 1.5);
+    for (let y = -70; y < 47; y += 10) {
       c.strokeStyle = INK;
       c.lineWidth = 1;
       c.beginPath();
-      c.moveTo(54, y);
-      c.lineTo(58, y + 8);
+      c.moveTo(63, y);
+      c.lineTo(68, y + 8);
       c.stroke();
     }
-    box(c, 41, -30, 18, 5, "#a7c7d4", 1.5);
-    box(c, 43, -5, 13, 4, "#b3c6db", 1);
+    box(c, 53, -61, 15, 5, "#a7c7d4", 1.5);
+    box(c, 53, -19, 13, 4, "#b3c6db", 1);
     const flight = world2.state.flight, launched = flight && flight.x === m.x && flight.y === m.y;
     if (world2.rocketLoaded(m) || launched) {
       c.save();
       if (launched) c.translate(0, -flight.elapsed * flight.elapsed * 8);
       c.globalAlpha = launched ? 1 : 0.4 + m.progress / 6 * 0.6;
-      polygon(c, [[21, 17], [10, 43], [21, 39], [43, 39], [54, 43], [43, 17]], "#f5784f", INK, 2);
-      box(c, 21, -22, 22, 61, "#f4efdc", 2);
-      box(c, 22, -20, 4, 57, "#fffbed", 0);
-      box(c, 38, -20, 4, 57, "#b5c3cc", 0);
-      polygon(c, [[21, -22], [32, -44], [43, -22]], "#ffab67", INK, 2);
-      box(c, 26, -14, 12, 14, "#3acfe5", 1.8);
-      box(c, 28, -12, 3, 8, "#b3f9ff", 0);
-      box(c, 21, 9, 22, 8, "#e46c69", 1.2);
-      box(c, 24, 28, 16, 8, "#99b5c4", 1);
-      box(c, 24, 39, 16, 7, "#67788d", 1.5);
-      box(c, 26, 18, 12, 3, "#d6c8aa", 0);
+      c.translate(32, 47);
+      c.scale(1.4, 1.4);
+      c.translate(-32, -47);
+      polygon(c, [[22, 19], [15, 27], [11, 42], [22, 38], [42, 38], [53, 42], [49, 27], [42, 19]], "#536677", INK, 2);
+      polygon(c, [[21, -24], [24, -34], [32, -46], [40, -34], [43, -24], [43, 36], [39, 41], [25, 41], [21, 36]], "#a5b3bb", INK, 2);
+      polygon(c, [[23, -23], [25, -33], [32, -43], [32, 38], [24, 35]], "#d8e0df", "", 0);
+      polygon(c, [[32, -43], [39, -33], [41, -23], [41, 35], [32, 38]], "#8798a3", "", 0);
+      box(c, 23, -18, 18, 3, "#485b69", 1);
+      box(c, 23, 1, 18, 3, "#526573", 1);
+      box(c, 23, 23, 18, 3, "#526573", 1);
+      box(c, 27, -13, 10, 8, "#273c4c", 1.3);
+      box(c, 29, -11, 6, 3, "#6fa3aa", 0);
+      box(c, 24, 11, 16, 2, "#d0a75b", 0);
+      box(c, 25, 29, 14, 7, "#657a88", 1);
+      polygon(c, [[24, 39], [40, 39], [43, 47], [21, 47]], "#3b4c5c", INK, 1.5);
+      box(c, 23, 44, 5, 5, "#697b83", 1);
+      box(c, 29, 44, 6, 6, "#697b83", 1);
+      box(c, 36, 44, 5, 5, "#697b83", 1);
+      c.strokeStyle = "#425766";
+      c.lineWidth = 0.6;
+      c.beginPath();
+      c.moveTo(32, -34);
+      c.lineTo(32, 35);
+      c.moveTo(25, -2);
+      c.lineTo(39, -2);
+      c.moveTo(25, 19);
+      c.lineTo(39, 19);
+      c.stroke();
+      for (const y of [-20, -3, 7, 19, 27, 35]) {
+        c.fillStyle = "#e3e8e4";
+        c.fillRect(24, y, 1.2, 1.2);
+        c.fillStyle = "#4e6270";
+        c.fillRect(39, y, 1.2, 1.2);
+      }
+      box(c, 26, 5, 4, 3, "#526a79", 0.6);
+      box(c, 34, 5, 4, 3, "#526a79", 0.6);
+      c.fillStyle = "#d59f55";
+      c.fillRect(25, 14, 2, 4);
+      c.fillRect(37, 14, 2, 4);
+      box(c, 27, -29, 10, 3, "#697f8d", 0.6);
+      c.fillStyle = "#dbe8e5";
+      c.fillRect(29, -28, 6, 1);
       if (launched) {
         polygon(c, [[24, 46], [26, 66], [32, 57 + Math.sin(time * 25) * 4], [39, 70], [41, 46]], "#ff793d", INK, 1.5);
         polygon(c, [[28, 46], [32, 63], [37, 46]], "#fff0a3", "", 0);
@@ -1684,33 +1766,33 @@ function render(c, world2, v) {
       if (exhausted.has(key)) continue;
       const [x, y] = key.split(",").map(Number);
       if (world2.tile(x, y).amount > 0) continue;
-      const ground = groundChunks.get(`${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`);
+      const ground = groundChunks.get(`${Math.floor(x / GROUND_CHUNK)},${Math.floor(y / GROUND_CHUNK)}`);
       if (ground) {
         const gc = ground.getContext("2d");
         gc.save();
-        gc.translate(x % CHUNK * 32, y % CHUNK * 32);
+        gc.translate(x % GROUND_CHUNK * 32, y % GROUND_CHUNK * 32);
         terrain(gc, world2, x, y);
         gc.restore();
         exhausted.add(key);
       }
     }
   }
-  for (let cy = Math.floor(y0 / CHUNK); cy < Math.ceil(y1 / CHUNK); cy++) for (let cx = Math.floor(x0 / CHUNK); cx < Math.ceil(x1 / CHUNK); cx++) {
+  for (let cy = Math.floor(y0 / GROUND_CHUNK); cy < Math.ceil(y1 / GROUND_CHUNK); cy++) for (let cx = Math.floor(x0 / GROUND_CHUNK); cx < Math.ceil(x1 / GROUND_CHUNK); cx++) {
     const key = `${cx},${cy}`;
     let ground = groundChunks.get(key);
     if (!ground) {
       ground = document.createElement("canvas");
-      ground.width = ground.height = CHUNK * 32;
+      ground.width = ground.height = GROUND_CHUNK * 32;
       const gc = ground.getContext("2d");
-      for (let ly = 0; ly < CHUNK; ly++) for (let lx = 0; lx < CHUNK; lx++) {
+      for (let ly = 0; ly < GROUND_CHUNK; ly++) for (let lx = 0; lx < GROUND_CHUNK; lx++) {
         gc.save();
         gc.translate(lx * 32, ly * 32);
-        terrain(gc, world2, cx * CHUNK + lx, cy * CHUNK + ly);
+        terrain(gc, world2, cx * GROUND_CHUNK + lx, cy * GROUND_CHUNK + ly);
         gc.restore();
       }
       groundChunks.set(key, ground);
     }
-    c.drawImage(ground, ox + cx * CHUNK * unit, oy + cy * CHUNK * unit, CHUNK * unit, CHUNK * unit);
+    c.drawImage(ground, ox + cx * GROUND_CHUNK * unit, oy + cy * GROUND_CHUNK * unit, GROUND_CHUNK * unit, GROUND_CHUNK * unit);
   }
   const p = world2.state.player, px = ox + p.x * unit, py = oy + p.y * unit;
   const wreck = world2.wreck();
@@ -2001,7 +2083,7 @@ var positions = { iron: [0, 60], copper: [0, 150], coal: [0, 240], stone: [0, 33
 var techPositions = { electronics: [0, 115], logistics: [1, 30], smelting: [1, 275], industry: [2, 115], astronautics: [3, 115], interstellar: [4, 115] };
 var techWidth = 246;
 var techStep = 308;
-var rawDescription = { iron: "Mena b\xE1sica para placas y construcci\xF3n.", copper: "Mena para placas, postes y laboratorios.", coal: "Combustible de hornos y generadores; ingrediente del acero y combustible s\xF3lido.", stone: "Material de construcci\xF3n. Cada tramo de cinta consume una piedra.", titanium: "Se encuentra en Borealis. Necesario para los cohetes posteriores al primero.", crystal: "Se encuentra en Vulcan. Necesario para los n\xFAcleos de navegaci\xF3n." };
+var rawDescription = { iron: "Mena b\xE1sica para placas y construcci\xF3n.", copper: "Mena para placas, postes y laboratorios.", coal: "Combustible de hornos y generadores; ingrediente del acero y combustible s\xF3lido.", stone: "Material de construcci\xF3n. Cada tramo de cinta consume una piedra.", titanium: "Se encuentra en Aurora y Borealis. Necesario para cohetes avanzados.", crystal: "Se encuentra en Aurora y Vulcan. Necesario para los n\xFAcleos de navegaci\xF3n." };
 function setupResearchMap(getWorld) {
   let view = "technology", selected2 = "", lastKey = "";
   const nodes = Object.entries(positions).map(([id, [col, y]]) => ({ id, x: 24 + col * step, y, label: ITEM_NAMES[id], kind: col === 0 ? "raw" : "recipe", item: id, recipe: Object.keys(RECIPES).find((r) => Object.hasOwn(RECIPES[r].output, id)) }));
@@ -2119,7 +2201,7 @@ function setupResearchMap(getWorld) {
       button.setAttribute("aria-pressed", String(n2.id === selected2));
       const tech2 = n2.recipe ? RECIPES[n2.recipe].tech : null, locked = !!tech2 && !w2.hasTech(tech2);
       button.classList.toggle("locked", locked);
-      el2(`node-status-${n2.id}`).textContent = n2.id === "rocket" ? `Destino: ${planetInfo(s.highestPlanet + 1, s.originSeed).name}` : tech2 ? locked ? `\u25C7 ${TECHS[tech2].name}` : "\u2713 Receta desbloqueada" : n2.item === "titanium" ? "Borealis \xB7 mena" : n2.item === "crystal" ? "Vulcan \xB7 mena" : n2.kind === "raw" ? "Extracci\xF3n" : n2.item === "ironPlate" || n2.item === "copperPlate" ? "Horno \xB7 carb\xF3n" : n2.id === "generator" ? "Carb\xF3n \u2192 electricidad" : n2.id === "construction" ? "Edificios y cintas" : n2.id === "research" ? "Ciencia + electricidad" : "Receta inicial";
+      el2(`node-status-${n2.id}`).textContent = n2.id === "rocket" ? `Destino: ${planetInfo(s.highestPlanet + 1, s.originSeed).name}` : tech2 ? locked ? `\u25C7 ${TECHS[tech2].name}` : "\u2713 Receta desbloqueada" : n2.item === "titanium" ? "Aurora / Borealis \xB7 mena" : n2.item === "crystal" ? "Aurora / Vulcan \xB7 mena" : n2.kind === "raw" ? "Extracci\xF3n" : n2.item === "ironPlate" || n2.item === "copperPlate" ? "Horno \xB7 carb\xF3n" : n2.id === "generator" ? "Carb\xF3n \u2192 electricidad" : n2.id === "construction" ? "Edificios y cintas" : n2.id === "research" ? "Ciencia + electricidad" : "Receta inicial";
     }
     const n = nodes.find((n2) => n2.id === selected2);
     if (!n) {
@@ -2455,7 +2537,6 @@ function limitZoom() {
 function changeZoom(factor) {
   zoom *= factor;
   limitZoom();
-  updateUI();
 }
 new ResizeObserver(resize).observe(canvas);
 function target() {
@@ -2633,7 +2714,7 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
   const existing = world.at(t.x, t.y);
-  const error = tool === "belt" && existing?.type === "belt" && world.inReach(existing) ? null : world.build(t.x, t.y, tool, direction);
+  const error = world.build(t.x, t.y, tool, direction);
   if (!error && tool === "belt") {
     dragLast = t;
     canvas.setPointerCapture(e.pointerId);
@@ -2825,7 +2906,7 @@ el5("random-seed").onclick = () => {
 };
 function requestNewGame(seed) {
   const chosen = seed.trim();
-  pendingSeed = chosen.startsWith("m4:") ? chosen : `m4:${chosen}`;
+  pendingSeed = chosen.startsWith("m5:") ? chosen : `m5:${chosen}`;
   if (!chosen || pendingSeed.length > 48) return;
   keys.clear();
   el5("new-game-error").textContent = "";
@@ -3003,6 +3084,8 @@ function updateUI() {
     [s.launches >= 3, `Completar la campa\xF1a \xB7 ${Math.min(3, s.launches)}/3`],
     [s.highestPlanet >= 4, `Explorar el espacio profundo \xB7 ${Math.max(0, s.highestPlanet - 2)} sectores`]
   ].map(([done, title]) => `<div class="goal ${done ? "done" : ""}"><span>${done ? "\u2713" : "\u25CB"}</span> ${title}</div>`).join("");
+  el5("rare-guide").hidden = s.planet !== 0;
+  if (s.planet === 0) el5("rare-locations").textContent = world.homeRareDeposits().map((d) => `${ITEM_NAMES[d.resource]}: X ${d.x}, Y ${d.y}`).join(" \xB7 ");
   el5("coords").textContent = `X ${s.player.x.toFixed(1)} / Y ${s.player.y.toFixed(1)}`;
   el5("zoom").textContent = Math.round(zoom * 100) + "%";
   for (const type of TYPES) {
